@@ -171,6 +171,20 @@ def clean_project_work_files(work_dir: Path, project: str) -> None:
             path.unlink()
 
 
+def render_build_input(perplex_dir: Path, model: ModelConfig) -> str:
+    text = model.build_input_file.read_text()
+    replacements = {
+        "${PERPLEX_DIR}": str(perplex_dir),
+        "${PROJECT}": model.project,
+        "${COMPOSITION_FILE}": str(model.composition_file),
+        "${OUTPUT_DIR}": str(model.output_dir),
+        "${WORK_DIR}": str(model.work_dir),
+    }
+    for placeholder, value in replacements.items():
+        text = text.replace(placeholder, value)
+    return text
+
+
 def run_build_if_input_exists(perplex_dir: Path, model: ModelConfig) -> None:
     log_path = model.output_dir / "build.log"
     dat_file = project_dat_file(model.work_dir, model.project)
@@ -188,7 +202,7 @@ def run_build_if_input_exists(perplex_dir: Path, model: ModelConfig) -> None:
     clean_project_work_files(model.work_dir, model.project)
     run_command(
         executable=executable_path(perplex_dir, "build"),
-        stdin_text=model.build_input_file.read_text(),
+        stdin_text=render_build_input(perplex_dir, model),
         cwd=model.work_dir,
         log_path=log_path,
         label="BUILD",

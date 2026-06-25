@@ -1,5 +1,5 @@
 moon_near_pkt_mantle
-/Users/evellard/Documents/Code/perplex/datafiles/stx21ver.dat
+${PERPLEX_DIR}/datafiles/stx21ver.dat
 
 n
 
@@ -21,7 +21,7 @@ y
 n
 n
 y
-/Users/evellard/Documents/Code/perplex/datafiles/stx21_solution_model.dat
+${PERPLEX_DIR}/datafiles/stx21_solution_model.dat
 O
 Opx
 Cpx

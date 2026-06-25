@@ -55,7 +55,7 @@ tests/
 
 Copy `configs/models.example.json` to `configs/models.json` and set `perplex_dir` to your local Perple_X install. `configs/models.json` is ignored because it is machine-local. It contains the Perple_X install path, project names, composition paths, build input paths, output directories, and optional work directories. The Perple_X install is treated as an external executable dependency; generated files are written under this repository, using `outputs/<project>/work` by default.
 
-The included BUILD input transcripts use `stx21ver.dat` and `stx21_solution_model.dat` from the configured Perple_X install. That Stixrude 2021 database supports `NA2O`, `MGO`, `AL2O3`, `SIO2`, `CAO`, and `FEO`, so the placeholder `TiO2`, `K2O`, and `P2O5` amounts are not passed to BUILD.
+The included BUILD input transcripts use `stx21ver.dat` and `stx21_solution_model.dat` from the configured Perple_X install. They use `${PERPLEX_DIR}` placeholders, which the runner replaces from `configs/models.json` at runtime. That Stixrude 2021 database supports `NA2O`, `MGO`, `AL2O3`, `SIO2`, `CAO`, and `FEO`, so the placeholder `TiO2`, `K2O`, and `P2O5` amounts are not passed to BUILD.
 
 ## Run Full Pipeline
 
@@ -117,6 +117,16 @@ python3 run_perplex.py --project moon_far_dry_mantle
 ```
 
 If `build_inputs/<project>.build.in` exists, the runner feeds that file to BUILD from the repo-local model work directory. If it does not exist, `<project>.dat` must already exist in that work directory.
+
+BUILD input files may use these portable placeholders:
+
+```text
+${PERPLEX_DIR}
+${PROJECT}
+${COMPOSITION_FILE}
+${OUTPUT_DIR}
+${WORK_DIR}
+```
 
 The default `perplex_option.dat` written by the runner is intentionally a smoke-test grid:
 

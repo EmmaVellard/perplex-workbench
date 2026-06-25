@@ -103,7 +103,7 @@ def make_config(tmp_path: Path, perplex_dir: Path, *, build_input: bool = True) 
 
     build_input_file = tmp_path / "build.in"
     if build_input:
-        build_input_file.write_text(f"{PROJECT}\n")
+        build_input_file.write_text(f"{PROJECT}\n${{PERPLEX_DIR}}/datafiles/example.dat\n")
 
     output_dir = tmp_path / "outputs" / PROJECT
     config = {
@@ -161,6 +161,9 @@ def test_successful_run_validates_with_fake_perplex(tmp_path: Path) -> None:
     assert (output_dir / "work" / f"{PROJECT}.dat").exists()
     assert not (perplex_dir / "perplex_option.dat").exists()
     assert not (perplex_dir / f"{PROJECT}.dat").exists()
+    build_log = (output_dir / "build.log").read_text()
+    assert "${PERPLEX_DIR}" not in build_log
+    assert str(perplex_dir / "datafiles" / "example.dat") in build_log
     assert "STATUS: PASS" in (output_dir / "validation_report.txt").read_text()
 
 
