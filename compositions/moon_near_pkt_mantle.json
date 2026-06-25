@@ -1,0 +1,47 @@
+{
+  "project": "moon_near_pkt_mantle",
+  "description": "Placeholder nearside PKT/KREEP-influenced lunar mantle sensitivity end-member",
+  "units": "wt%",
+  "oxide_order": [
+    "SiO2",
+    "TiO2",
+    "Al2O3",
+    "FeO",
+    "MgO",
+    "CaO",
+    "Na2O",
+    "K2O",
+    "P2O5"
+  ],
+  "composition_raw": {
+    "SiO2": 45.0,
+    "TiO2": 1.5,
+    "Al2O3": 8.0,
+    "FeO": 13.5,
+    "MgO": 28.0,
+    "CaO": 3.3,
+    "Na2O": 0.2,
+    "K2O": 0.3,
+    "P2O5": 0.2
+  },
+  "composition_normalized": {
+    "SiO2": 45.0,
+    "TiO2": 1.5,
+    "Al2O3": 8.0,
+    "FeO": 13.5,
+    "MgO": 28.0,
+    "CaO": 3.3,
+    "Na2O": 0.2,
+    "K2O": 0.3,
+    "P2O5": 0.2
+  },
+  "placeholder": true,
+  "source_note": "PLACEHOLDER ONLY: replace this composition with a published lunar mantle composition before scientific use.",
+  "notes": [
+    "PLACEHOLDER ONLY: replace this composition with a published lunar mantle composition before scientific use.",
+    "Use normalized values in Perple_X BUILD unless you intentionally want unnormalized amounts.",
+    "Fe is represented as FeO for the silicate mantle.",
+    "Do not include native Fe, Ni, or Cu in these mantle compositions.",
+    "KREEP/Th/U/K radiogenic effects should mostly be represented in PlanetProfile thermal/radiogenic parameters."
+  ]
+}

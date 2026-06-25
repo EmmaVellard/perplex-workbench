@@ -1,0 +1,16 @@
+moon_far_dry_mantle
+Placeholder farside dry, depleted, KREEP-poor lunar mantle end-member
+PLACEHOLDER ONLY: replace this composition with a published lunar mantle composition before scientific use.
+
+Normalized oxide composition, wt%:
+SiO2       45.31722
+TiO2        0.20141
+Al2O3       3.52467
+FeO        12.58812
+MgO        36.25378
+CaO         2.01410
+Na2O        0.05035
+K2O         0.02014
+P2O5        0.03021
+
+Total: 100.00000

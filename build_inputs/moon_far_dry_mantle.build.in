@@ -1,0 +1,34 @@
+moon_far_dry_mantle
+/Users/evellard/Documents/Code/perplex/datafiles/stx21ver.dat
+
+n
+
+n
+n
+NA2O
+MGO
+AL2O3
+SIO2
+CAO
+FEO
+
+n
+1
+1000 50000
+800 2200
+y
+0.05035247 36.25377644 3.52467271 45.31722054 2.01409869 12.58811682
+n
+n
+y
+/Users/evellard/Documents/Code/perplex/datafiles/stx21_solution_model.dat
+O
+Opx
+Cpx
+Gt
+Sp
+Pl
+C2/c
+NaAl
+
+Placeholder farside dry, depleted, KREEP-poor lunar mantle end-member

@@ -1,0 +1,257 @@
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+PIPELINE_DIR = Path(__file__).resolve().parents[1]
+PROJECT = "test_project"
+
+VALID_TAB = """\
+|fake
+test_project_1.tab
+2
+P(bar)
+1000.0
+1000.0
+2
+T(K)
+1200.0
+100.0
+2
+9
+P(bar) T(K) rho_kgm3 VP_kms VS_kms Cp_Jm3K alpha_pK KS_bar GS_bar
+1000 1200 3300 8.0 4.5 4000000 3.0E-5 1300000 800000
+2000 1300 3400 8.1 4.6 4100000 3.1E-5 1400000 810000
+"""
+
+
+def write_executable(path: Path, body: str) -> None:
+    path.write_text("#!/usr/bin/env python3\n" + body)
+    path.chmod(path.stat().st_mode | 0o111)
+
+
+def make_fake_perplex(
+    tmp_path: Path,
+    *,
+    tab_text: str = VALID_TAB,
+    werami_log: str = "",
+    no_tab: bool = False,
+    omit: str | None = None,
+) -> Path:
+    perplex_dir = tmp_path / "fake_perplex"
+    bin_dir = perplex_dir / "bin"
+    bin_dir.mkdir(parents=True)
+
+    if omit != "build":
+        write_executable(
+            bin_dir / "build",
+            """
+from pathlib import Path
+import sys
+
+project = sys.stdin.readline().strip()
+Path(f"{project}.dat").write_text("fake dat\\n")
+print("build ok")
+""",
+        )
+
+    if omit != "vertex":
+        write_executable(
+            bin_dir / "vertex",
+            """
+import sys
+
+sys.stdin.read()
+print("vertex ok")
+""",
+        )
+
+    if omit != "werami":
+        if no_tab:
+            werami_body = f"""
+import sys
+
+sys.stdin.read()
+print({werami_log!r})
+"""
+        else:
+            werami_body = f"""
+from pathlib import Path
+import sys
+
+lines = sys.stdin.read().splitlines()
+project = lines[0] if lines else "unknown"
+expected = ["2", "38", "1", "2", "13", "14", "3", "4", "10", "11", "0", "n", "1", "0"]
+if lines[1:] != expected:
+    print(f"unexpected WERAMI input: {{lines[1:]!r}}", file=sys.stderr)
+    raise SystemExit(2)
+Path(f"{{project}}_1.tab").write_text({tab_text!r})
+print({werami_log!r})
+"""
+        write_executable(bin_dir / "werami", werami_body)
+
+    return perplex_dir
+
+
+def make_config(tmp_path: Path, perplex_dir: Path, *, build_input: bool = True) -> tuple[Path, Path]:
+    composition_file = tmp_path / "composition.json"
+    composition_file.write_text("{}\n")
+
+    build_input_file = tmp_path / "build.in"
+    if build_input:
+        build_input_file.write_text(f"{PROJECT}\n")
+
+    output_dir = tmp_path / "outputs" / PROJECT
+    config = {
+        "perplex_dir": str(perplex_dir),
+        "models": [
+            {
+                "project": PROJECT,
+                "composition_file": str(composition_file),
+                "build_input_file": str(build_input_file),
+                "output_dir": str(output_dir),
+            }
+        ],
+    }
+    config_path = tmp_path / "models.json"
+    config_path.write_text(json.dumps(config))
+    return config_path, output_dir
+
+
+def run_pipeline(config_path: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(PIPELINE_DIR / "run_perplex.py"), "--config", str(config_path)],
+        cwd=str(PIPELINE_DIR),
+        text=True,
+        capture_output=True,
+    )
+
+
+def run_full_pipeline(config_path: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            str(PIPELINE_DIR / "run_full_pipeline.py"),
+            "--config",
+            str(config_path),
+            "--skip-compositions",
+        ],
+        cwd=str(PIPELINE_DIR),
+        text=True,
+        capture_output=True,
+    )
+
+
+def test_successful_run_validates_with_fake_perplex(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path)
+    config_path, output_dir = make_config(tmp_path, perplex_dir)
+
+    result = run_pipeline(config_path)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    planetprofile_tab = output_dir / f"{PROJECT}_planetprofile.tab"
+    assert (output_dir / f"{PROJECT}_raw_werami.tab").exists()
+    assert planetprofile_tab.exists()
+    assert planetprofile_tab.read_text().splitlines()[0].split()[:2] == ["T(K)", "P(bar)"]
+    assert (output_dir / "work" / "perplex_option.dat").exists()
+    assert (output_dir / "work" / f"{PROJECT}.dat").exists()
+    assert not (perplex_dir / "perplex_option.dat").exists()
+    assert not (perplex_dir / f"{PROJECT}.dat").exists()
+    assert "STATUS: PASS" in (output_dir / "validation_report.txt").read_text()
+
+
+def test_full_pipeline_entrypoint_runs_with_fake_perplex(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path)
+    config_path, output_dir = make_config(tmp_path, perplex_dir)
+
+    result = run_full_pipeline(config_path)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Running Perple_X pipeline" in result.stdout
+    assert (output_dir / f"{PROJECT}_planetprofile.tab").exists()
+    assert "STATUS: PASS" in (output_dir / "validation_report.txt").read_text()
+
+
+def test_missing_dat_file_fails_before_vertex(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path)
+    config_path, _ = make_config(tmp_path, perplex_dir, build_input=False)
+
+    result = run_pipeline(config_path)
+
+    assert result.returncode != 0
+    assert "Missing Perple_X .dat file" in result.stderr
+
+
+def test_missing_executable_fails_clearly(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path, omit="vertex")
+    config_path, _ = make_config(tmp_path, perplex_dir, build_input=False)
+    output_dir = tmp_path / "outputs" / PROJECT
+    work_dir = output_dir / "work"
+    work_dir.mkdir(parents=True)
+    (work_dir / f"{PROJECT}.dat").write_text("fake dat\n")
+
+    result = run_pipeline(config_path)
+
+    assert result.returncode != 0
+    assert "Missing VERTEX executable" in result.stderr
+
+
+def test_werami_missing_tab_fails(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path, no_tab=True)
+    config_path, _ = make_config(tmp_path, perplex_dir)
+
+    result = run_pipeline(config_path)
+
+    assert result.returncode != 0
+    assert "expected table was not found" in result.stderr
+
+
+def test_solution_model_not_requested_log_fails_validation(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(
+        tmp_path,
+        werami_log="Reading solution models from file: not requested",
+    )
+    config_path, output_dir = make_config(tmp_path, perplex_dir)
+
+    result = run_pipeline(config_path)
+
+    assert result.returncode != 0
+    report = (output_dir / "validation_report.txt").read_text()
+    assert "STATUS: FAIL" in report
+    assert "Reading solution models from file: not requested" in report
+
+
+def test_warning_ver177_log_fails_validation(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path, werami_log="warning ver177")
+    config_path, output_dir = make_config(tmp_path, perplex_dir)
+
+    result = run_pipeline(config_path)
+
+    assert result.returncode != 0
+    assert "warning ver177" in (output_dir / "validation_report.txt").read_text()
+
+
+def test_bad_number_sentinel_in_tab_fails_validation(tmp_path: Path) -> None:
+    bad_tab = VALID_TAB.replace("4100000", "0.100000E+100")
+    perplex_dir = make_fake_perplex(tmp_path, tab_text=bad_tab)
+    config_path, output_dir = make_config(tmp_path, perplex_dir)
+
+    result = run_pipeline(config_path)
+
+    assert result.returncode != 0
+    assert "bad-number" in (output_dir / "validation_report.txt").read_text()
+
+
+def test_zero_only_alpha_column_fails_validation(tmp_path: Path) -> None:
+    zero_alpha_tab = VALID_TAB.replace("3.0E-5", "0.0").replace("3.1E-5", "0.0")
+    perplex_dir = make_fake_perplex(tmp_path, tab_text=zero_alpha_tab)
+    config_path, output_dir = make_config(tmp_path, perplex_dir)
+
+    result = run_pipeline(config_path)
+
+    assert result.returncode != 0
+    assert "Zero-only alpha column" in (output_dir / "validation_report.txt").read_text()

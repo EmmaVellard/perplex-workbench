@@ -1,0 +1,47 @@
+{
+  "project": "moon_far_dry_mantle",
+  "description": "Placeholder farside dry, depleted, KREEP-poor lunar mantle end-member",
+  "units": "wt%",
+  "oxide_order": [
+    "SiO2",
+    "TiO2",
+    "Al2O3",
+    "FeO",
+    "MgO",
+    "CaO",
+    "Na2O",
+    "K2O",
+    "P2O5"
+  ],
+  "composition_raw": {
+    "SiO2": 45.0,
+    "TiO2": 0.2,
+    "Al2O3": 3.5,
+    "FeO": 12.5,
+    "MgO": 36.0,
+    "CaO": 2.0,
+    "Na2O": 0.05,
+    "K2O": 0.02,
+    "P2O5": 0.03
+  },
+  "composition_normalized": {
+    "SiO2": 45.31722054380665,
+    "TiO2": 0.2014098690835851,
+    "Al2O3": 3.5246727089627394,
+    "FeO": 12.58811681772407,
+    "MgO": 36.25377643504532,
+    "CaO": 2.014098690835851,
+    "Na2O": 0.050352467270896276,
+    "K2O": 0.02014098690835851,
+    "P2O5": 0.030211480362537766
+  },
+  "placeholder": true,
+  "source_note": "PLACEHOLDER ONLY: replace this composition with a published lunar mantle composition before scientific use.",
+  "notes": [
+    "PLACEHOLDER ONLY: replace this composition with a published lunar mantle composition before scientific use.",
+    "Use normalized values in Perple_X BUILD unless you intentionally want unnormalized amounts.",
+    "Fe is represented as FeO for the silicate mantle.",
+    "Do not include native Fe, Ni, or Cu in these mantle compositions.",
+    "KREEP/Th/U/K radiogenic effects should mostly be represented in PlanetProfile thermal/radiogenic parameters."
+  ]
+}

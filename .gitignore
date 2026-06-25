@@ -1,0 +1,19 @@
+# Local config
+configs/models.json
+
+# Perple_X generated files
+outputs/
+*.tab
+*.plt
+*.blk
+*_seismic_data.txt
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# macOS
+.DS_Store

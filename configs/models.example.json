@@ -1,0 +1,17 @@
+{
+  "perplex_dir": "/absolute/path/to/perplex",
+  "models": [
+    {
+      "project": "moon_far_dry_mantle",
+      "composition_file": "compositions/moon_far_dry_mantle.json",
+      "build_input_file": "build_inputs/moon_far_dry_mantle.build.in",
+      "output_dir": "outputs/moon_far_dry_mantle"
+    },
+    {
+      "project": "moon_near_pkt_mantle",
+      "composition_file": "compositions/moon_near_pkt_mantle.json",
+      "build_input_file": "build_inputs/moon_near_pkt_mantle.build.in",
+      "output_dir": "outputs/moon_near_pkt_mantle"
+    }
+  ]
+}

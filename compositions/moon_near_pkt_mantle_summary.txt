@@ -1,0 +1,16 @@
+moon_near_pkt_mantle
+Placeholder nearside PKT/KREEP-influenced lunar mantle sensitivity end-member
+PLACEHOLDER ONLY: replace this composition with a published lunar mantle composition before scientific use.
+
+Normalized oxide composition, wt%:
+SiO2       45.00000
+TiO2        1.50000
+Al2O3       8.00000
+FeO        13.50000
+MgO        28.00000
+CaO         3.30000
+Na2O        0.20000
+K2O         0.30000
+P2O5        0.20000
+
+Total: 100.00000
