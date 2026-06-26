@@ -17,9 +17,12 @@ n
 1000 50000
 800 2200
 y
-0.05035247 36.25377644 3.52467271 45.31722054 2.01409869 12.58811682
+${PERPLEX_BULK_VALUES}
 n
+y
 n
+qtz
+
 y
 ${PERPLEX_DIR}/datafiles/stx21_solution_model.dat
 O
@@ -31,4 +34,4 @@ Pl
 C2/c
 NaAl
 
-Placeholder farside dry, depleted, KREEP-poor lunar mantle end-member
+Farside/highlands-like depleted lunar terrane proxy

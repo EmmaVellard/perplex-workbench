@@ -1,6 +1,6 @@
 {
   "project": "moon_near_pkt_mantle",
-  "description": "Placeholder nearside PKT/KREEP-influenced lunar mantle sensitivity end-member",
+  "description": "Nearside/maria-like enriched lunar terrane proxy based on published average maria surface oxides",
   "units": "wt%",
   "oxide_order": [
     "SiO2",
@@ -14,34 +14,37 @@
     "P2O5"
   ],
   "composition_raw": {
-    "SiO2": 45.0,
-    "TiO2": 1.5,
-    "Al2O3": 8.0,
-    "FeO": 13.5,
-    "MgO": 28.0,
-    "CaO": 3.3,
-    "Na2O": 0.2,
-    "K2O": 0.3,
-    "P2O5": 0.2
+    "SiO2": 45.4,
+    "TiO2": 3.9,
+    "Al2O3": 14.9,
+    "FeO": 14.1,
+    "MgO": 9.2,
+    "CaO": 11.8,
+    "Na2O": 0.6,
+    "K2O": 0.0,
+    "P2O5": 0.0
   },
   "composition_normalized": {
-    "SiO2": 45.0,
-    "TiO2": 1.5,
-    "Al2O3": 8.0,
-    "FeO": 13.5,
-    "MgO": 28.0,
-    "CaO": 3.3,
-    "Na2O": 0.2,
-    "K2O": 0.3,
-    "P2O5": 0.2
+    "SiO2": 45.44544544544545,
+    "TiO2": 3.9039039039039043,
+    "Al2O3": 14.914914914914917,
+    "FeO": 14.114114114114116,
+    "MgO": 9.20920920920921,
+    "CaO": 11.811811811811813,
+    "Na2O": 0.6006006006006006,
+    "K2O": 0.0,
+    "P2O5": 0.0
   },
-  "placeholder": true,
-  "source_note": "PLACEHOLDER ONLY: replace this composition with a published lunar mantle composition before scientific use.",
+  "scientific_status": "literature_proxy",
+  "placeholder": false,
+  "literature_proxy": true,
+  "source_note": "Major oxides use a commonly tabulated lunar maria average surface composition (SiO2 45.4, Al2O3 14.9, CaO 11.8, FeO 14.1, MgO 9.2, TiO2 3.9, Na2O 0.6 wt%). Used here as a nearside/maria proxy; PKT/KREEP heat-producing elements should be treated separately.",
   "notes": [
-    "PLACEHOLDER ONLY: replace this composition with a published lunar mantle composition before scientific use.",
+    "LITERATURE-BASED PROXY ONLY: these near/far compositions are first-pass terrane proxies for pipeline testing, not final lunar mantle models.",
     "Use normalized values in Perple_X BUILD unless you intentionally want unnormalized amounts.",
     "Fe is represented as FeO for the silicate mantle.",
     "Do not include native Fe, Ni, or Cu in these mantle compositions.",
-    "KREEP/Th/U/K radiogenic effects should mostly be represented in PlanetProfile thermal/radiogenic parameters."
+    "KREEP/Th/U/K radiogenic effects should mostly be represented in PlanetProfile thermal/radiogenic parameters.",
+    "The stx21ver.dat Perple_X database used by this pipeline supports NA2O, MGO, AL2O3, SIO2, CAO, and FEO; TiO2, K2O, and P2O5 are retained in the composition record but omitted from BUILD."
   ]
 }

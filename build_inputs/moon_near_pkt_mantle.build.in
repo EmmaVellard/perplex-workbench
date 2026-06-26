@@ -17,9 +17,12 @@ n
 1000 50000
 800 2200
 y
-0.20000000 28.00000000 8.00000000 45.00000000 3.30000000 13.50000000
+${PERPLEX_BULK_VALUES}
 n
+y
 n
+qtz
+
 y
 ${PERPLEX_DIR}/datafiles/stx21_solution_model.dat
 O
@@ -31,4 +34,4 @@ Pl
 C2/c
 NaAl
 
-Placeholder nearside PKT/KREEP-influenced lunar mantle sensitivity end-member
+Nearside/maria-like enriched lunar terrane proxy

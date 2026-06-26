@@ -41,6 +41,15 @@ PLANETPROFILE_COLUMNS = (
     ("gs_bar", "GS_bar"),
 )
 
+PERPLEX_COMPONENTS = (
+    ("Na2O", "NA2O"),
+    ("MgO", "MGO"),
+    ("Al2O3", "AL2O3"),
+    ("SiO2", "SIO2"),
+    ("CaO", "CAO"),
+    ("FeO", "FEO"),
+)
+
 
 class PipelineError(RuntimeError):
     pass
@@ -171,6 +180,29 @@ def clean_project_work_files(work_dir: Path, project: str) -> None:
             path.unlink()
 
 
+def composition_bulk_values(composition_file: Path) -> str:
+    data = json.loads(composition_file.read_text())
+    composition = data.get("composition_normalized")
+    if not isinstance(composition, dict):
+        raise PipelineError(f"Composition file lacks composition_normalized: {composition_file}")
+
+    missing = [oxide for oxide, _ in PERPLEX_COMPONENTS if oxide not in composition]
+    if missing:
+        raise PipelineError(
+            f"Composition file is missing oxide(s) needed for BUILD: {', '.join(missing)}"
+        )
+
+    values: list[str] = []
+    for oxide, _ in PERPLEX_COMPONENTS:
+        try:
+            values.append(f"{float(composition[oxide]):.8f}")
+        except (TypeError, ValueError) as exc:
+            raise PipelineError(
+                f"Composition value for {oxide} is not numeric in {composition_file}"
+            ) from exc
+    return " ".join(values)
+
+
 def render_build_input(perplex_dir: Path, model: ModelConfig) -> str:
     text = model.build_input_file.read_text()
     replacements = {
@@ -180,6 +212,8 @@ def render_build_input(perplex_dir: Path, model: ModelConfig) -> str:
         "${OUTPUT_DIR}": str(model.output_dir),
         "${WORK_DIR}": str(model.work_dir),
     }
+    if "${PERPLEX_BULK_VALUES}" in text:
+        replacements["${PERPLEX_BULK_VALUES}"] = composition_bulk_values(model.composition_file)
     for placeholder, value in replacements.items():
         text = text.replace(placeholder, value)
     return text

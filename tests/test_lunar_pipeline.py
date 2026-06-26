@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import make_compositions
+import run_perplex
 
 
 PIPELINE_DIR = Path(__file__).resolve().parents[1]
@@ -144,6 +148,60 @@ def run_full_pipeline(config_path: Path) -> subprocess.CompletedProcess[str]:
         text=True,
         capture_output=True,
     )
+
+
+def test_lunar_models_use_literature_proxy_values() -> None:
+    models = {model.project: model for model in make_compositions.lunar_models()}
+
+    far = models["moon_far_dry_mantle"]
+    assert far.raw_wt_percent["Al2O3"] == 24.0
+    assert far.raw_wt_percent["FeO"] == 5.9
+    assert far.raw_wt_percent["CaO"] == 15.9
+
+    near = models["moon_near_pkt_mantle"]
+    assert near.raw_wt_percent["Al2O3"] == 14.9
+    assert near.raw_wt_percent["FeO"] == 14.1
+    assert near.raw_wt_percent["TiO2"] == 3.9
+
+    near_normalized = make_compositions.normalize_wt_percent(near.raw_wt_percent)
+    assert math.isclose(near_normalized["SiO2"], 45.44544545, rel_tol=0, abs_tol=1e-8)
+
+
+def test_render_build_input_expands_bulk_values_from_composition(tmp_path: Path) -> None:
+    composition_file = tmp_path / "composition.json"
+    composition_file.write_text(
+        json.dumps(
+            {
+                "composition_normalized": {
+                    "SiO2": 45.44544545,
+                    "TiO2": 3.90390390,
+                    "Al2O3": 14.91491491,
+                    "FeO": 14.11411411,
+                    "MgO": 9.20920921,
+                    "CaO": 11.81181181,
+                    "Na2O": 0.60060060,
+                    "K2O": 0.0,
+                    "P2O5": 0.0,
+                }
+            }
+        )
+        + "\n"
+    )
+    build_input_file = tmp_path / "build.in"
+    build_input_file.write_text("${PERPLEX_DIR}\n${PERPLEX_BULK_VALUES}\n")
+
+    model = run_perplex.ModelConfig(
+        project=PROJECT,
+        composition_file=composition_file,
+        build_input_file=build_input_file,
+        output_dir=tmp_path / "output",
+        work_dir=tmp_path / "work",
+    )
+
+    rendered = run_perplex.render_build_input(tmp_path / "fake_perplex", model)
+
+    assert str(tmp_path / "fake_perplex") in rendered
+    assert "0.60060060 9.20920921 14.91491491 45.44544545 11.81181181 14.11411411" in rendered
 
 
 def test_successful_run_validates_with_fake_perplex(tmp_path: Path) -> None:
