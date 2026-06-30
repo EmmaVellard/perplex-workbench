@@ -206,7 +206,10 @@ For a new composition, add one block to `configs/models.json` under `models`:
   "project": "moon_custom_model",
   "description": "Short scientific description",
   "planetprofile_filename": "Moon_Custom_Model_PerpleX.tab",
-  "scientific_status": "draft",
+  "scientific_status": "surface_proxy",
+  "model_scope": "surface_terrane_proxy",
+  "planetprofile_readiness": "mechanically_exportable_not_scientifically_final",
+  "composition_interpretation": "State what this composition represents, what it does not represent, and whether omitted oxides affect the interpretation.",
   "literature_proxy": true,
   "source_note": "Where these numbers came from and what they represent.",
   "oxides_wt_percent": {
