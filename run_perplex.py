@@ -29,7 +29,28 @@ x_nodes 20 40
 y_nodes 20 40
 """
 
-WERAMI_INPUT_TEMPLATE = "{project}\n2\n38\n1\n2\n13\n14\n3\n4\n10\n11\n0\nn\n1\n0\n"
+DEFAULT_WERAMI_INPUT_SEQUENCE = (
+    "2",
+    "38",
+    "1",
+    "2",
+    "13",
+    "14",
+    "3",
+    "4",
+    "10",
+    "11",
+    "0",
+    "n",
+    "1",
+    "0",
+)
+WERAMI_INPUT_DESCRIPTION = {
+    "mode": "2D grid table",
+    "property": "38 system properties",
+    "requested_columns": ["P(bar)", "T(K)", "rho", "Vp", "Vs", "Cp", "alpha", "Ks", "Gs"],
+    "note": "Sequence is the historical default used by this workbench and can be overridden per model with werami_input_sequence.",
+}
 
 PLANETPROFILE_COLUMNS = (
     ("t_k", "T(K)"),
@@ -53,6 +74,14 @@ PERPLEX_COMPONENTS = (
 )
 ACTIVE_COMPOSITION_OXIDES = {oxide for oxide, _ in PERPLEX_COMPONENTS}
 OMITTED_OXIDE_THRESHOLD = 1.0e-12
+DEFAULT_BUILD_DATABASE_FILE = "stx21ver.dat"
+DEFAULT_BUILD_SOLUTION_MODEL_FILE = "stx21_solution_model.dat"
+DEFAULT_BUILD_PT_RANGE = {
+    "pressure_bar": {"min": 1000.0, "max": 50000.0},
+    "temperature_k": {"min": 800.0, "max": 2200.0},
+}
+DEFAULT_BUILD_EXCLUDED_PHASES = ("qtz",)
+DEFAULT_BUILD_SOLUTION_MODELS = ("O", "Opx", "Cpx", "Gt", "Sp", "Pl", "C2/c", "NaAl")
 
 
 class PipelineError(RuntimeError):
@@ -67,6 +96,11 @@ class ModelConfig:
     output_dir: Path
     work_dir: Path
     planetprofile_filename: str | None = None
+    scientific_status: str | None = None
+    model_scope: str | None = None
+    planetprofile_readiness: str | None = None
+    composition_interpretation: str | None = None
+    werami_input_sequence: tuple[str, ...] = DEFAULT_WERAMI_INPUT_SEQUENCE
 
 
 @dataclass(frozen=True)
@@ -86,6 +120,15 @@ def resolve_path(value: str | Path, base_dir: Path) -> Path:
     if path.is_absolute():
         return path
     return (base_dir / path).resolve()
+
+
+def werami_sequence_from_config(model: dict) -> tuple[str, ...]:
+    sequence = model.get("werami_input_sequence")
+    if sequence is None:
+        return DEFAULT_WERAMI_INPUT_SEQUENCE
+    if not isinstance(sequence, list):
+        raise ValueError("werami_input_sequence must be a JSON list of prompt responses.")
+    return tuple(str(item) for item in sequence)
 
 
 def load_config(config_path: Path) -> PipelineConfig:
@@ -121,6 +164,11 @@ def load_config(config_path: Path) -> PipelineConfig:
                 output_dir=output_dir,
                 work_dir=work_dir,
                 planetprofile_filename=model.get("planetprofile_filename"),
+                scientific_status=model.get("scientific_status"),
+                model_scope=model.get("model_scope"),
+                planetprofile_readiness=model.get("planetprofile_readiness"),
+                composition_interpretation=model.get("composition_interpretation"),
+                werami_input_sequence=werami_sequence_from_config(model),
             )
         )
 
@@ -235,6 +283,27 @@ def omitted_composition_oxides(composition_file: Path) -> list[tuple[str, float]
     return omitted
 
 
+def omitted_oxide_records(composition_file: Path) -> list[dict[str, float | str]]:
+    data, composition = load_normalized_composition(composition_file)
+    records: list[dict[str, float | str]] = []
+    raw = data.get("composition_raw", {})
+    for oxide in composition_oxide_order(data, composition):
+        value = composition[oxide]
+        if oxide not in ACTIVE_COMPOSITION_OXIDES and abs(value) > OMITTED_OXIDE_THRESHOLD:
+            record: dict[str, float | str] = {
+                "oxide": oxide,
+                "normalized_wt_percent": value,
+                "reason": "not_in_active_perplex_component_list",
+            }
+            if isinstance(raw, dict) and oxide in raw:
+                try:
+                    record["raw_wt_percent"] = float(raw[oxide])
+                except (TypeError, ValueError):
+                    pass
+            records.append(record)
+    return records
+
+
 def omitted_oxide_warning(composition_file: Path) -> str | None:
     omitted = omitted_composition_oxides(composition_file)
     if not omitted:
@@ -275,6 +344,33 @@ def composition_bulk_values(composition_file: Path) -> str:
     for oxide, _ in PERPLEX_COMPONENTS:
         values.append(f"{composition[oxide]:.8f}")
     return " ".join(values)
+
+
+def active_component_records() -> list[dict[str, str]]:
+    return [
+        {"oxide": oxide, "component": component}
+        for oxide, component in PERPLEX_COMPONENTS
+    ]
+
+
+def build_template_provenance(perplex_dir: Path, model: ModelConfig) -> dict:
+    return {
+        "build_template": str(model.build_input_file),
+        "active_perplex_components": active_component_records(),
+        "database_file": str(perplex_dir / "datafiles" / DEFAULT_BUILD_DATABASE_FILE),
+        "solution_model_file": str(perplex_dir / "datafiles" / DEFAULT_BUILD_SOLUTION_MODEL_FILE),
+        "p_t_range": DEFAULT_BUILD_PT_RANGE,
+        "excluded_phases": list(DEFAULT_BUILD_EXCLUDED_PHASES),
+        "solution_models": list(DEFAULT_BUILD_SOLUTION_MODELS),
+        "provenance_note": (
+            "These fields describe the default lunar_stx21_template.build.in assumptions. "
+            "If a custom build_input_file is supplied, verify that these assumptions still apply."
+        ),
+    }
+
+
+def werami_input_text(model: ModelConfig) -> str:
+    return f"{model.project}\n" + "\n".join(model.werami_input_sequence) + "\n"
 
 
 def render_build_input(perplex_dir: Path, model: ModelConfig) -> str:
@@ -352,7 +448,7 @@ def run_werami(perplex_dir: Path, model: ModelConfig) -> Path:
     print(f"Running WERAMI for {model.project}")
     run_command(
         executable=executable_path(perplex_dir, "werami"),
-        stdin_text=WERAMI_INPUT_TEMPLATE.format(project=model.project),
+        stdin_text=werami_input_text(model),
         cwd=model.work_dir,
         log_path=model.output_dir / "werami.log",
         label="WERAMI",
@@ -447,7 +543,14 @@ def main(argv: list[str] | None = None) -> int:
 
         for model in selected:
             run_model(config.perplex_dir, model)
-    except (FileNotFoundError, PermissionError, PipelineError, subprocess.SubprocessError) as exc:
+    except (
+        FileNotFoundError,
+        PermissionError,
+        ValueError,
+        json.JSONDecodeError,
+        PipelineError,
+        subprocess.SubprocessError,
+    ) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 

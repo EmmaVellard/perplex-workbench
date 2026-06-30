@@ -51,8 +51,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def project_label(project: str) -> str:
     labels = {
-        "moon_far_dry_mantle": "Far side / highlands proxy",
-        "moon_near_pkt_mantle": "Near side / maria proxy",
+        "moon_far_highlands_surface_proxy": "Far side / highlands surface proxy",
+        "moon_near_maria_surface_proxy": "Near side / maria surface proxy",
     }
     return labels.get(project, project.replace("_", " "))
 

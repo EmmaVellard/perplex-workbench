@@ -24,9 +24,20 @@ OXIDE_ORDER = [
 ]
 
 MODEL_STATUS = (
-    "LITERATURE-BASED PROXY ONLY: these near/far compositions are first-pass "
-    "terrane proxies for pipeline testing, not final lunar mantle models."
+    "SURFACE PROXY SMOKE TEST ONLY: these near/far compositions are first-pass "
+    "surface terrane proxies for pipeline testing, not final lunar mantle models."
 )
+
+PERPLEX_BUILD_COMPONENTS = (
+    ("Na2O", "NA2O"),
+    ("MgO", "MGO"),
+    ("Al2O3", "AL2O3"),
+    ("SiO2", "SIO2"),
+    ("CaO", "CAO"),
+    ("FeO", "FEO"),
+)
+ACTIVE_BUILD_OXIDES = {oxide for oxide, _ in PERPLEX_BUILD_COMPONENTS}
+OMITTED_OXIDE_THRESHOLD = 1.0e-12
 
 
 @dataclass(frozen=True)
@@ -35,7 +46,13 @@ class LunarComposition:
     description: str
     raw_wt_percent: dict[str, float]
     source_note: str = MODEL_STATUS
-    scientific_status: str = "literature_proxy"
+    scientific_status: str = "surface_proxy_smoke_test"
+    model_scope: str = "surface_terrane_proxy"
+    planetprofile_readiness: str = "mechanically_exportable_not_scientifically_final"
+    composition_interpretation: str = (
+        "Average lunar surface terrane oxide composition used to test Perple_X and "
+        "PlanetProfile table mechanics; not a sampled mantle composition."
+    )
     literature_proxy: bool = True
 
 
@@ -71,6 +88,7 @@ def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     raw = ordered_composition(model.raw_wt_percent)
     normalized = normalize_wt_percent(raw)
+    omitted_oxides = omitted_oxides_from_default_build(raw, normalized)
 
     document = {
         "project": model.project,
@@ -80,14 +98,32 @@ def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
         "composition_raw": raw,
         "composition_normalized": normalized,
         "scientific_status": model.scientific_status,
+        "model_scope": model.model_scope,
+        "planetprofile_readiness": model.planetprofile_readiness,
+        "composition_interpretation": model.composition_interpretation,
         "placeholder": False,
         "literature_proxy": model.literature_proxy,
         "source_note": model.source_note,
+        "default_perplex_build": {
+            "active_components": [
+                {"oxide": oxide, "component": component}
+                for oxide, component in PERPLEX_BUILD_COMPONENTS
+            ],
+            "omitted_oxides": omitted_oxides,
+            "omission_caveat": (
+                "The default stx21 BUILD template omits oxides that are not in the "
+                "active component list. Nonzero TiO2 is therefore recorded here but "
+                "not passed to Perple_X, weakening any Ti-rich maria versus highlands "
+                "interpretation."
+            ),
+        },
+        "omitted_oxides_from_default_build": omitted_oxides,
         "notes": [
             MODEL_STATUS,
             "Use normalized values in Perple_X BUILD unless you intentionally want unnormalized amounts.",
-            "Fe is represented as FeO for the silicate mantle.",
-            "Do not include native Fe, Ni, or Cu in these mantle compositions.",
+            "These source oxides represent lunar surface/terrane proxies, not final lunar mantle compositions.",
+            "Fe is represented as FeO for the silicate component.",
+            "Do not include native Fe, Ni, or Cu unless metallic phases and their elastic properties are intentionally modeled.",
             "KREEP/Th/U/K radiogenic effects should mostly be represented in PlanetProfile thermal/radiogenic parameters.",
             "The stx21ver.dat Perple_X database used by this pipeline supports NA2O, MGO, AL2O3, SIO2, CAO, and FEO; TiO2, K2O, and P2O5 are retained in the composition record but omitted from BUILD.",
         ],
@@ -110,10 +146,33 @@ def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
         for oxide in OXIDE_ORDER:
             handle.write(f"{oxide:8s} {normalized[oxide]:10.5f}\n")
         handle.write(f"\nTotal: {sum(normalized.values()):.5f}\n")
+        if omitted_oxides:
+            handle.write("\nOmitted from default stx21 BUILD:\n")
+            for item in omitted_oxides:
+                handle.write(f"{item['oxide']:8s} {item['normalized_wt_percent']:10.5f}\n")
 
     print(f"Wrote {json_path}")
     print(f"Wrote {values_path}")
     print(f"Wrote {summary_path}")
+
+
+def omitted_oxides_from_default_build(
+    raw: dict[str, float],
+    normalized: dict[str, float],
+) -> list[dict[str, float | str]]:
+    omitted: list[dict[str, float | str]] = []
+    for oxide in OXIDE_ORDER:
+        value = normalized[oxide]
+        if oxide not in ACTIVE_BUILD_OXIDES and abs(value) > OMITTED_OXIDE_THRESHOLD:
+            omitted.append(
+                {
+                    "oxide": oxide,
+                    "raw_wt_percent": raw[oxide],
+                    "normalized_wt_percent": value,
+                    "reason": "not_in_default_stx21_active_component_list",
+                }
+            )
+    return omitted
 
 
 def model_from_config_entry(entry: dict) -> LunarComposition | None:
@@ -136,6 +195,15 @@ def model_from_config_entry(entry: dict) -> LunarComposition | None:
         raw_wt_percent=composition,
         source_note=entry.get("source_note", MODEL_STATUS),
         scientific_status=entry.get("scientific_status", "user_defined"),
+        model_scope=entry.get("model_scope", "user_defined"),
+        planetprofile_readiness=entry.get(
+            "planetprofile_readiness",
+            "not_assessed_for_planetprofile_science",
+        ),
+        composition_interpretation=entry.get(
+            "composition_interpretation",
+            "User-defined oxide composition; scientific interpretation was not provided in the config.",
+        ),
         literature_proxy=bool(entry.get("literature_proxy", False)),
     )
 
@@ -181,8 +249,8 @@ def configured_or_default_models(config_path: Path, project: str | None = None) 
 def lunar_models() -> list[LunarComposition]:
     return [
         LunarComposition(
-            project="moon_far_dry_mantle",
-            description="Farside/highlands-like depleted lunar terrane proxy based on published average highlands surface oxides",
+            project="moon_far_highlands_surface_proxy",
+            description="Farside/highlands-like lunar surface terrane proxy based on published average highlands oxides",
             raw_wt_percent={
                 "SiO2": 45.5,
                 "TiO2": 0.60,
@@ -197,12 +265,16 @@ def lunar_models() -> list[LunarComposition]:
             source_note=(
                 "Major oxides use a commonly tabulated lunar highlands average surface composition "
                 "(SiO2 45.5, Al2O3 24.0, CaO 15.9, FeO 5.9, MgO 7.5, TiO2 0.6, Na2O 0.6 wt%). "
-                "Used here as a farside/highlands proxy; not a directly sampled mantle composition."
+                "Used here as a farside/highlands surface proxy; not a directly sampled mantle composition."
+            ),
+            composition_interpretation=(
+                "Average highlands-like lunar surface oxide composition used to test the "
+                "far-side end of a terrane contrast; it does not represent a final lunar mantle EOS composition."
             ),
         ),
         LunarComposition(
-            project="moon_near_pkt_mantle",
-            description="Nearside/maria-like enriched lunar terrane proxy based on published average maria surface oxides",
+            project="moon_near_maria_surface_proxy",
+            description="Nearside/maria-like lunar surface terrane proxy based on published average maria oxides",
             raw_wt_percent={
                 "SiO2": 45.4,
                 "TiO2": 3.90,
@@ -217,7 +289,12 @@ def lunar_models() -> list[LunarComposition]:
             source_note=(
                 "Major oxides use a commonly tabulated lunar maria average surface composition "
                 "(SiO2 45.4, Al2O3 14.9, CaO 11.8, FeO 14.1, MgO 9.2, TiO2 3.9, Na2O 0.6 wt%). "
-                "Used here as a nearside/maria proxy; PKT/KREEP heat-producing elements should be treated separately."
+                "Used here as a nearside/maria surface proxy; PKT/KREEP heat-producing elements should be treated separately."
+            ),
+            composition_interpretation=(
+                "Average maria-like lunar surface oxide composition used to test the near-side "
+                "end of a terrane contrast; nonzero TiO2 is not passed to BUILD in the default "
+                "stx21 setup, so it is not a final Ti-bearing mantle EOS model."
             ),
         ),
     ]

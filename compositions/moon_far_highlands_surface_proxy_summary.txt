@@ -1,0 +1,19 @@
+moon_far_highlands_surface_proxy
+Farside/highlands-like lunar surface terrane proxy based on published average highlands oxides
+SURFACE PROXY SMOKE TEST ONLY: these near/far compositions are first-pass surface terrane proxies for pipeline testing, not final lunar mantle models.
+
+Normalized oxide composition, wt%:
+SiO2       45.50000
+TiO2        0.60000
+Al2O3      24.00000
+FeO         5.90000
+MgO         7.50000
+CaO        15.90000
+Na2O        0.60000
+K2O         0.00000
+P2O5        0.00000
+
+Total: 100.00000
+
+Omitted from default stx21 BUILD:
+TiO2        0.60000

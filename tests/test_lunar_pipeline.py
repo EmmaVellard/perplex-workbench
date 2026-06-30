@@ -16,6 +16,8 @@ import run_perplex
 
 PIPELINE_DIR = Path(__file__).resolve().parents[1]
 PROJECT = "test_project"
+FAR_PROJECT = "moon_far_highlands_surface_proxy"
+NEAR_PROJECT = "moon_near_maria_surface_proxy"
 
 VALID_TAB = """\
 |fake
@@ -196,6 +198,10 @@ def make_inline_config(tmp_path: Path, perplex_dir: Path) -> tuple[Path, Path]:
                 "description": "Inline composition test model",
                 "output_dir": str(output_dir),
                 "planetprofile_filename": "Inline_Test_PerpleX.tab",
+                "scientific_status": "surface_proxy_smoke_test",
+                "model_scope": "surface_terrane_proxy",
+                "planetprofile_readiness": "mechanically_exportable_not_scientifically_final",
+                "composition_interpretation": "Inline surface proxy test composition.",
                 "oxides_wt_percent": {
                     "SiO2": 45.4,
                     "TiO2": 3.9,
@@ -218,18 +224,35 @@ def make_inline_config(tmp_path: Path, perplex_dir: Path) -> tuple[Path, Path]:
 def test_lunar_models_use_literature_proxy_values() -> None:
     models = {model.project: model for model in make_compositions.lunar_models()}
 
-    far = models["moon_far_dry_mantle"]
+    far = models[FAR_PROJECT]
     assert far.raw_wt_percent["Al2O3"] == 24.0
     assert far.raw_wt_percent["FeO"] == 5.9
     assert far.raw_wt_percent["CaO"] == 15.9
+    assert far.scientific_status == "surface_proxy_smoke_test"
+    assert far.model_scope == "surface_terrane_proxy"
 
-    near = models["moon_near_pkt_mantle"]
+    near = models[NEAR_PROJECT]
     assert near.raw_wt_percent["Al2O3"] == 14.9
     assert near.raw_wt_percent["FeO"] == 14.1
     assert near.raw_wt_percent["TiO2"] == 3.9
 
     near_normalized = make_compositions.normalize_wt_percent(near.raw_wt_percent)
     assert math.isclose(near_normalized["SiO2"], 45.44544545, rel_tol=0, abs_tol=1e-8)
+
+
+def test_generated_composition_records_scientific_and_omission_metadata(tmp_path: Path) -> None:
+    near = [model for model in make_compositions.lunar_models() if model.project == NEAR_PROJECT][0]
+
+    make_compositions.write_composition(near, outdir=tmp_path)
+
+    data = json.loads((tmp_path / f"{NEAR_PROJECT}.json").read_text())
+    assert data["scientific_status"] == "surface_proxy_smoke_test"
+    assert data["model_scope"] == "surface_terrane_proxy"
+    assert data["planetprofile_readiness"] == "mechanically_exportable_not_scientifically_final"
+    assert "not a final Ti-bearing mantle EOS" in data["composition_interpretation"]
+    omitted = data["omitted_oxides_from_default_build"]
+    assert omitted[0]["oxide"] == "TiO2"
+    assert math.isclose(omitted[0]["normalized_wt_percent"], 3.90390390, rel_tol=0, abs_tol=1e-8)
 
 
 def test_render_build_input_expands_bulk_values_from_composition(tmp_path: Path) -> None:
@@ -267,6 +290,20 @@ def test_render_build_input_expands_bulk_values_from_composition(tmp_path: Path)
 
     assert str(tmp_path / "fake_perplex") in rendered
     assert "0.60060060 9.20920921 14.91491491 45.44544545 11.81181181 14.11411411" in rendered
+
+
+def test_default_werami_input_sequence_is_backwards_compatible(tmp_path: Path) -> None:
+    model = run_perplex.ModelConfig(
+        project=PROJECT,
+        composition_file=tmp_path / "composition.json",
+        build_input_file=tmp_path / "build.in",
+        output_dir=tmp_path / "output",
+        work_dir=tmp_path / "work",
+    )
+
+    assert run_perplex.werami_input_text(model) == (
+        f"{PROJECT}\n2\n38\n1\n2\n13\n14\n3\n4\n10\n11\n0\nn\n1\n0\n"
+    )
 
 
 def test_planetprofile_native_conversion(tmp_path: Path) -> None:
@@ -315,7 +352,17 @@ def test_export_planetprofile_copies_native_tables_with_manifest(tmp_path: Path)
     assert exported.exists()
     assert exported.read_text().startswith("|6.6.6\n")
     assert manifest.exists()
-    assert "Custom_PlanetProfile_EOS.tab" in manifest.read_text()
+    manifest_data = json.loads(manifest.read_text())
+    assert manifest_data["schema_version"] == 2
+    assert "does not imply scientific readiness" in manifest_data["export_warning"]
+    table = manifest_data["tables"][0]
+    assert table["exported_filename"] == "Custom_PlanetProfile_EOS.tab"
+    assert table["active_perplex_components"][0] == {"oxide": "Na2O", "component": "NA2O"}
+    assert table["database_file"].endswith("stx21ver.dat")
+    assert table["solution_model_file"].endswith("stx21_solution_model.dat")
+    assert table["p_t_range"]["pressure_bar"]["min"] == 1000.0
+    assert table["excluded_phases"] == ["qtz"]
+    assert table["werami_input_sequence"] == list(run_perplex.DEFAULT_WERAMI_INPUT_SEQUENCE)
     assert (output_dir / f"{PROJECT}_planetprofile_native.tab").exists()
 
 
@@ -452,6 +499,9 @@ def test_full_pipeline_generates_configured_inline_model(tmp_path: Path) -> None
     assert result.returncode == 0, result.stderr + result.stdout
     composition = tmp_path / "compositions" / f"{PROJECT}.json"
     assert composition.exists()
+    data = json.loads(composition.read_text())
+    assert data["scientific_status"] == "surface_proxy_smoke_test"
+    assert data["omitted_oxides_from_default_build"][0]["oxide"] == "TiO2"
     assert (output_dir / f"{PROJECT}_planetprofile_native.tab").exists()
     build_log = (output_dir / "build.log").read_text()
     assert "0.60060060 9.20920921 14.91491491 45.44544545 11.81181181 14.11411411" in build_log
@@ -471,7 +521,8 @@ def test_full_pipeline_exports_planetprofile_tables(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
     assert "Exporting PlanetProfile tables" in result.stdout
     assert (export_dir / "Pipeline_Exported_EOS.tab").exists()
-    assert (export_dir / "planetprofile_export_manifest.json").exists()
+    manifest = json.loads((export_dir / "planetprofile_export_manifest.json").read_text())
+    assert manifest["tables"][0]["export_warning"].startswith("This table is mechanically exportable")
 
 
 def test_missing_dat_file_fails_before_vertex(tmp_path: Path) -> None:

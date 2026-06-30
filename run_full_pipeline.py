@@ -27,7 +27,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--export-planetprofile",
         action="store_true",
-        help="Copy validated native .tab files to a PlanetProfile-ready export directory.",
+        help="Copy validated native .tab files to a PlanetProfile-format export directory.",
     )
     parser.add_argument(
         "--planetprofile-export-dir",

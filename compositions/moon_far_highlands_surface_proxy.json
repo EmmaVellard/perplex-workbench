@@ -1,0 +1,99 @@
+{
+  "project": "moon_far_highlands_surface_proxy",
+  "description": "Farside/highlands-like lunar surface terrane proxy based on published average highlands oxides",
+  "units": "wt%",
+  "oxide_order": [
+    "SiO2",
+    "TiO2",
+    "Al2O3",
+    "FeO",
+    "MgO",
+    "CaO",
+    "Na2O",
+    "K2O",
+    "P2O5"
+  ],
+  "composition_raw": {
+    "SiO2": 45.5,
+    "TiO2": 0.6,
+    "Al2O3": 24.0,
+    "FeO": 5.9,
+    "MgO": 7.5,
+    "CaO": 15.9,
+    "Na2O": 0.6,
+    "K2O": 0.0,
+    "P2O5": 0.0
+  },
+  "composition_normalized": {
+    "SiO2": 45.5,
+    "TiO2": 0.6,
+    "Al2O3": 24.0,
+    "FeO": 5.9,
+    "MgO": 7.5,
+    "CaO": 15.9,
+    "Na2O": 0.6,
+    "K2O": 0.0,
+    "P2O5": 0.0
+  },
+  "scientific_status": "surface_proxy_smoke_test",
+  "model_scope": "surface_terrane_proxy",
+  "planetprofile_readiness": "mechanically_exportable_not_scientifically_final",
+  "composition_interpretation": "Average highlands-like lunar surface oxide composition used to test the far-side end of a terrane contrast; it does not represent a final lunar mantle EOS composition.",
+  "placeholder": false,
+  "literature_proxy": true,
+  "source_note": "Major oxides use a commonly tabulated lunar highlands average surface composition (SiO2 45.5, Al2O3 24.0, CaO 15.9, FeO 5.9, MgO 7.5, TiO2 0.6, Na2O 0.6 wt%). Used here as a farside/highlands surface proxy; not a directly sampled mantle composition.",
+  "default_perplex_build": {
+    "active_components": [
+      {
+        "oxide": "Na2O",
+        "component": "NA2O"
+      },
+      {
+        "oxide": "MgO",
+        "component": "MGO"
+      },
+      {
+        "oxide": "Al2O3",
+        "component": "AL2O3"
+      },
+      {
+        "oxide": "SiO2",
+        "component": "SIO2"
+      },
+      {
+        "oxide": "CaO",
+        "component": "CAO"
+      },
+      {
+        "oxide": "FeO",
+        "component": "FEO"
+      }
+    ],
+    "omitted_oxides": [
+      {
+        "oxide": "TiO2",
+        "raw_wt_percent": 0.6,
+        "normalized_wt_percent": 0.6,
+        "reason": "not_in_default_stx21_active_component_list"
+      }
+    ],
+    "omission_caveat": "The default stx21 BUILD template omits oxides that are not in the active component list. Nonzero TiO2 is therefore recorded here but not passed to Perple_X, weakening any Ti-rich maria versus highlands interpretation."
+  },
+  "omitted_oxides_from_default_build": [
+    {
+      "oxide": "TiO2",
+      "raw_wt_percent": 0.6,
+      "normalized_wt_percent": 0.6,
+      "reason": "not_in_default_stx21_active_component_list"
+    }
+  ],
+  "notes": [
+    "SURFACE PROXY SMOKE TEST ONLY: these near/far compositions are first-pass surface terrane proxies for pipeline testing, not final lunar mantle models.",
+    "Use normalized values in Perple_X BUILD unless you intentionally want unnormalized amounts.",
+    "These source oxides represent lunar surface/terrane proxies, not final lunar mantle compositions.",
+    "Fe is represented as FeO for the silicate component.",
+    "Do not include native Fe, Ni, or Cu unless metallic phases and their elastic properties are intentionally modeled.",
+    "KREEP/Th/U/K radiogenic effects should mostly be represented in PlanetProfile thermal/radiogenic parameters.",
+    "The stx21ver.dat Perple_X database used by this pipeline supports NA2O, MGO, AL2O3, SIO2, CAO, and FEO; TiO2, K2O, and P2O5 are retained in the composition record but omitted from BUILD."
+  ]
+}

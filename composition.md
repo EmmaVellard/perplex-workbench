@@ -1,15 +1,25 @@
 # Lunar Composition Notes
 
-This file documents the first-pass lunar compositions used by the pipeline. These are literature-based terrane proxies for testing and comparison, not final lunar mantle compositions.
+This file documents the first-pass lunar compositions used by the pipeline. These are literature-based surface/terrane proxies for testing and comparison, not final lunar mantle compositions.
 
 ## Model Intent
 
-The two configured models are meant to bracket a simple near-side/far-side contrast:
+The two configured models are meant to bracket a simple near-side/far-side surface contrast:
 
-- `moon_far_dry_mantle`: farside/highlands-like proxy, with high Al2O3 and CaO and low FeO and TiO2.
-- `moon_near_pkt_mantle`: nearside/maria-like proxy, with higher FeO and TiO2 and lower Al2O3.
+- `moon_far_highlands_surface_proxy`: farside/highlands-like surface proxy, with high Al2O3 and CaO and low FeO and TiO2.
+- `moon_near_maria_surface_proxy`: nearside/maria-like surface proxy, with higher FeO and TiO2 and lower Al2O3.
 
-The names still include `mantle` because they are the current Perple_X project identifiers, but the oxide numbers below are surface/terrane averages. They should not be presented as directly sampled mantle compositions.
+Their scientific metadata is:
+
+| Field | Value |
+| --- | --- |
+| `scientific_status` | `surface_proxy_smoke_test` |
+| `model_scope` | `surface_terrane_proxy` |
+| `planetprofile_readiness` | `mechanically_exportable_not_scientifically_final` |
+
+The oxide numbers below are surface/terrane averages. They should not be presented as directly sampled mantle compositions.
+
+Editable source definitions live in `configs/models.example.json` or the local ignored `configs/models.json`. Files under `compositions/` are generated normalized artifacts.
 
 ## Source Values
 
@@ -56,16 +66,18 @@ Therefore `run_perplex.py` expands `${PERPLEX_BULK_VALUES}` in this order:
 
 | Project | BUILD values in `NA2O MGO AL2O3 SIO2 CAO FEO` order |
 | --- | --- |
-| `moon_far_dry_mantle` | `0.60000000 7.50000000 24.00000000 45.50000000 15.90000000 5.90000000` |
-| `moon_near_pkt_mantle` | `0.60060060 9.20920921 14.91491491 45.44544545 11.81181181 14.11411411` |
+| `moon_far_highlands_surface_proxy` | `0.60000000 7.50000000 24.00000000 45.50000000 15.90000000 5.90000000` |
+| `moon_near_maria_surface_proxy` | `0.60060060 9.20920921 14.91491491 45.44544545 11.81181181 14.11411411` |
 
-TiO2, K2O, and P2O5 remain in the JSON composition records, but they are omitted from BUILD when their oxides are not part of the active Perple_X component list. The runner now prints and writes an `oxide_omissions.txt` warning whenever a nonzero omitted oxide is detected.
+TiO2, K2O, and P2O5 remain in the JSON composition records, but they are omitted from BUILD when their oxides are not part of the active Perple_X component list. The runner prints and writes an `oxide_omissions.txt` warning whenever a nonzero omitted oxide is detected. The generated composition JSON also contains `omitted_oxides_from_default_build`, and the export manifest repeats the omitted oxide list.
+
+This matters scientifically: the near-side/maria proxy is Ti-rich in the source table, but the default `stx21` setup does not pass TiO2 to BUILD. Any near-side versus far-side comparison that depends on Ti-bearing phases is therefore incomplete.
 
 ## Current Thermodynamic Caveat
 
 The BUILD transcripts currently exclude pure `qtz`. Without that exclusion, the highlands-like proxy can stabilize quartz over part of the smoke-test P-T grid, and this `stx21ver.dat` setup can emit invalid quartz seismic properties. That leads to `NaN` Vp, Vs, bulk modulus, and shear modulus values in the WERAMI table.
 
-This exclusion keeps the PlanetProfile-facing smoke-test tables finite. It is a numerical/modeling guard, not a final scientific statement. If the goal becomes a publication-quality crustal or mantle-crust model, quartz stability and the database/solution-model choice should be revisited.
+This exclusion keeps the PlanetProfile-facing smoke-test tables finite. It is a numerical/modeling guard, not a final scientific statement about lunar crust or mantle mineralogy. If the goal becomes a publication-quality crustal, mantle, or mantle-crust model, quartz stability and the database/solution-model choice should be revisited.
 
 ## Reference Trail
 

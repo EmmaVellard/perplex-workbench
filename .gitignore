@@ -2,12 +2,19 @@
 configs/models.json
 
 # Perple_X generated files
-outputs/
+outputs/*
+!outputs/README.md
+!outputs/examples/
+!outputs/examples/**
 *.tab
+!outputs/examples/**/*.tab
 *.plt
 *.blk
 *_seismic_data.txt
 *.log
+
+# Files
+docs/
 
 # Python
 __pycache__/

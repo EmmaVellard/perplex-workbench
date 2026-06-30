@@ -1,0 +1,19 @@
+moon_near_maria_surface_proxy
+Nearside/maria-like lunar surface terrane proxy based on published average maria oxides
+SURFACE PROXY SMOKE TEST ONLY: these near/far compositions are first-pass surface terrane proxies for pipeline testing, not final lunar mantle models.
+
+Normalized oxide composition, wt%:
+SiO2       45.44545
+TiO2        3.90390
+Al2O3      14.91491
+FeO        14.11411
+MgO         9.20921
+CaO        11.81181
+Na2O        0.60060
+K2O         0.00000
+P2O5        0.00000
+
+Total: 100.00000
+
+Omitted from default stx21 BUILD:
+TiO2        3.90390
