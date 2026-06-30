@@ -9,11 +9,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from planetprofile_tables import write_planetprofile_native_table
 from validate_tab import column_indices, read_tab, validate_project_output
 
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG = BASE_DIR / "configs" / "models.json"
+DEFAULT_BUILD_TEMPLATE = BASE_DIR / "build_inputs" / "lunar_stx21_template.build.in"
 
 PERPLEX_OPTION_TEXT = """\
 warn_interactive F
@@ -64,6 +66,7 @@ class ModelConfig:
     build_input_file: Path
     output_dir: Path
     work_dir: Path
+    planetprofile_filename: str | None = None
 
 
 @dataclass(frozen=True)
@@ -87,7 +90,13 @@ def resolve_path(value: str | Path, base_dir: Path) -> Path:
 
 def load_config(config_path: Path) -> PipelineConfig:
     base_dir = config_base_dir(config_path)
-    data = json.loads(config_path.read_text())
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Missing config file: {config_path}. Copy configs/models.example.json to configs/models.json "
+            "and set perplex_dir to your local Perple_X install."
+        )
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    default_build_input = resolve_path(data.get("build_template_file", DEFAULT_BUILD_TEMPLATE), base_dir)
     models: list[ModelConfig] = []
 
     for model in data["models"]:
@@ -101,10 +110,17 @@ def load_config(config_path: Path) -> PipelineConfig:
         models.append(
             ModelConfig(
                 project=project,
-                composition_file=resolve_path(model["composition_file"], base_dir),
-                build_input_file=resolve_path(model["build_input_file"], base_dir),
+                composition_file=resolve_path(
+                    model.get("composition_file", f"compositions/{project}.json"),
+                    base_dir,
+                ),
+                build_input_file=resolve_path(
+                    model.get("build_input_file", default_build_input),
+                    base_dir,
+                ),
                 output_dir=output_dir,
                 work_dir=work_dir,
+                planetprofile_filename=model.get("planetprofile_filename"),
             )
         )
 
@@ -263,12 +279,20 @@ def composition_bulk_values(composition_file: Path) -> str:
 
 def render_build_input(perplex_dir: Path, model: ModelConfig) -> str:
     text = model.build_input_file.read_text()
+    build_title = model.project
+    if model.composition_file.exists():
+        try:
+            composition_data = json.loads(model.composition_file.read_text())
+            build_title = str(composition_data.get("description") or model.project)
+        except json.JSONDecodeError:
+            build_title = model.project
     replacements = {
         "${PERPLEX_DIR}": str(perplex_dir),
         "${PROJECT}": model.project,
         "${COMPOSITION_FILE}": str(model.composition_file),
         "${OUTPUT_DIR}": str(model.output_dir),
         "${WORK_DIR}": str(model.work_dir),
+        "${BUILD_TITLE}": build_title,
     }
     if "${PERPLEX_BULK_VALUES}" in text:
         replacements["${PERPLEX_BULK_VALUES}"] = composition_bulk_values(model.composition_file)
@@ -343,6 +367,14 @@ def run_werami(perplex_dir: Path, model: ModelConfig) -> Path:
 
     planetprofile_tab = model.output_dir / f"{model.project}_planetprofile.tab"
     write_planetprofile_tab(raw_tab, planetprofile_tab)
+
+    native_tab = model.output_dir / f"{model.project}_planetprofile_native.tab"
+    write_planetprofile_native_table(
+        raw_tab,
+        native_tab,
+        source_name=raw_tab.name,
+        first_axis="T",
+    )
     return planetprofile_tab
 
 

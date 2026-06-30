@@ -7,8 +7,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import export_planetprofile
 import make_compositions
 import plot_comparisons
+import planetprofile_tables
 import run_perplex
 
 
@@ -30,6 +32,8 @@ T(K)
 9
 P(bar) T(K) rho_kgm3 VP_kms VS_kms Cp_Jm3K alpha_pK KS_bar GS_bar
 1000 1200 3300 8.0 4.5 4000000 3.0E-5 1300000 800000
+2000 1200 3350 8.05 4.55 4050000 3.1E-5 1350000 805000
+1000 1300 3360 8.06 4.56 4060000 3.0E-5 1360000 806000
 2000 1300 3400 8.1 4.6 4100000 3.1E-5 1400000 810000
 """
 
@@ -102,7 +106,13 @@ print({werami_log!r})
     return perplex_dir
 
 
-def make_config(tmp_path: Path, perplex_dir: Path, *, build_input: bool = True) -> tuple[Path, Path]:
+def make_config(
+    tmp_path: Path,
+    perplex_dir: Path,
+    *,
+    build_input: bool = True,
+    planetprofile_filename: str | None = None,
+) -> tuple[Path, Path]:
     composition_file = tmp_path / "composition.json"
     composition_file.write_text("{}\n")
 
@@ -111,16 +121,18 @@ def make_config(tmp_path: Path, perplex_dir: Path, *, build_input: bool = True) 
         build_input_file.write_text(f"{PROJECT}\n${{PERPLEX_DIR}}/datafiles/example.dat\n")
 
     output_dir = tmp_path / "outputs" / PROJECT
+    model = {
+        "project": PROJECT,
+        "composition_file": str(composition_file),
+        "build_input_file": str(build_input_file),
+        "output_dir": str(output_dir),
+    }
+    if planetprofile_filename:
+        model["planetprofile_filename"] = planetprofile_filename
+
     config = {
         "perplex_dir": str(perplex_dir),
-        "models": [
-            {
-                "project": PROJECT,
-                "composition_file": str(composition_file),
-                "build_input_file": str(build_input_file),
-                "output_dir": str(output_dir),
-            }
-        ],
+        "models": [model],
     }
     config_path = tmp_path / "models.json"
     config_path.write_text(json.dumps(config))
@@ -136,7 +148,25 @@ def run_pipeline(config_path: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def run_full_pipeline(config_path: Path) -> subprocess.CompletedProcess[str]:
+def run_full_pipeline(config_path: Path, *, skip_compositions: bool = True) -> subprocess.CompletedProcess[str]:
+    command = [
+        sys.executable,
+        str(PIPELINE_DIR / "run_full_pipeline.py"),
+        "--config",
+        str(config_path),
+        "--skip-plots",
+    ]
+    if skip_compositions:
+        command.append("--skip-compositions")
+    return subprocess.run(
+        command,
+        cwd=str(PIPELINE_DIR),
+        text=True,
+        capture_output=True,
+    )
+
+
+def run_full_pipeline_export(config_path: Path, export_dir: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             sys.executable,
@@ -145,11 +175,44 @@ def run_full_pipeline(config_path: Path) -> subprocess.CompletedProcess[str]:
             str(config_path),
             "--skip-compositions",
             "--skip-plots",
+            "--export-planetprofile",
+            "--planetprofile-export-dir",
+            str(export_dir),
         ],
         cwd=str(PIPELINE_DIR),
         text=True,
         capture_output=True,
     )
+
+
+def make_inline_config(tmp_path: Path, perplex_dir: Path) -> tuple[Path, Path]:
+    output_dir = tmp_path / "outputs" / PROJECT
+    config = {
+        "perplex_dir": str(perplex_dir),
+        "build_template_file": str(PIPELINE_DIR / "build_inputs" / "lunar_stx21_template.build.in"),
+        "models": [
+            {
+                "project": PROJECT,
+                "description": "Inline composition test model",
+                "output_dir": str(output_dir),
+                "planetprofile_filename": "Inline_Test_PerpleX.tab",
+                "oxides_wt_percent": {
+                    "SiO2": 45.4,
+                    "TiO2": 3.9,
+                    "Al2O3": 14.9,
+                    "FeO": 14.1,
+                    "MgO": 9.2,
+                    "CaO": 11.8,
+                    "Na2O": 0.6,
+                    "K2O": 0.0,
+                    "P2O5": 0.0,
+                },
+            }
+        ],
+    }
+    config_path = tmp_path / "inline_models.json"
+    config_path.write_text(json.dumps(config) + "\n")
+    return config_path, output_dir
 
 
 def test_lunar_models_use_literature_proxy_values() -> None:
@@ -204,6 +267,56 @@ def test_render_build_input_expands_bulk_values_from_composition(tmp_path: Path)
 
     assert str(tmp_path / "fake_perplex") in rendered
     assert "0.60060060 9.20920921 14.91491491 45.44544545 11.81181181 14.11411411" in rendered
+
+
+def test_planetprofile_native_conversion(tmp_path: Path) -> None:
+    source = tmp_path / "source.tab"
+    source.write_text(VALID_TAB)
+    converted = tmp_path / "converted.tab"
+
+    planetprofile_tables.write_planetprofile_native_table(
+        source,
+        converted,
+        source_name="reference_source_1.tab",
+    )
+
+    lines = converted.read_text().splitlines()
+    assert lines[0] == "|6.6.6"
+    assert lines[1].strip() == "reference_source_1.tab"
+    assert lines[3].strip() == "T(K)"
+    assert lines[7].strip() == "P(bar)"
+    assert lines[11].strip() == "9"
+    assert lines[12].startswith("T(K)")
+
+
+def test_export_planetprofile_copies_native_tables_with_manifest(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path)
+    config_path, output_dir = make_config(
+        tmp_path,
+        perplex_dir,
+        planetprofile_filename="Custom_PlanetProfile_EOS.tab",
+    )
+    run_result = run_pipeline(config_path)
+    assert run_result.returncode == 0, run_result.stderr + run_result.stdout
+
+    export_dir = tmp_path / "planetprofile_export"
+    result = export_planetprofile.main(
+        [
+            "--config",
+            str(config_path),
+            "--planetprofile-export-dir",
+            str(export_dir),
+        ]
+    )
+
+    exported = export_dir / "Custom_PlanetProfile_EOS.tab"
+    manifest = export_dir / "planetprofile_export_manifest.json"
+    assert result == 0
+    assert exported.exists()
+    assert exported.read_text().startswith("|6.6.6\n")
+    assert manifest.exists()
+    assert "Custom_PlanetProfile_EOS.tab" in manifest.read_text()
+    assert (output_dir / f"{PROJECT}_planetprofile_native.tab").exists()
 
 
 def test_omitted_oxide_warning_mentions_nonzero_dropped_oxides(tmp_path: Path) -> None:
@@ -296,6 +409,7 @@ def test_successful_run_validates_with_fake_perplex(tmp_path: Path) -> None:
     assert (output_dir / f"{PROJECT}_raw_werami.tab").exists()
     assert planetprofile_tab.exists()
     assert planetprofile_tab.read_text().splitlines()[0].split()[:2] == ["T(K)", "P(bar)"]
+    assert (output_dir / f"{PROJECT}_planetprofile_native.tab").exists()
     assert (output_dir / "work" / "perplex_option.dat").exists()
     assert (output_dir / "work" / f"{PROJECT}.dat").exists()
     assert not (perplex_dir / "perplex_option.dat").exists()
@@ -316,6 +430,48 @@ def test_full_pipeline_entrypoint_runs_with_fake_perplex(tmp_path: Path) -> None
     assert "Running Perple_X pipeline" in result.stdout
     assert (output_dir / f"{PROJECT}_planetprofile.tab").exists()
     assert "STATUS: PASS" in (output_dir / "validation_report.txt").read_text()
+
+
+def test_full_pipeline_allows_explicit_composition_file_without_inline_oxides(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path)
+    config_path, output_dir = make_config(tmp_path, perplex_dir)
+
+    result = run_full_pipeline(config_path, skip_compositions=False)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "No inline compositions to generate" in result.stdout
+    assert (output_dir / f"{PROJECT}_planetprofile.tab").exists()
+
+
+def test_full_pipeline_generates_configured_inline_model(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path)
+    config_path, output_dir = make_inline_config(tmp_path, perplex_dir)
+
+    result = run_full_pipeline(config_path, skip_compositions=False)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    composition = tmp_path / "compositions" / f"{PROJECT}.json"
+    assert composition.exists()
+    assert (output_dir / f"{PROJECT}_planetprofile_native.tab").exists()
+    build_log = (output_dir / "build.log").read_text()
+    assert "0.60060060 9.20920921 14.91491491 45.44544545 11.81181181 14.11411411" in build_log
+
+
+def test_full_pipeline_exports_planetprofile_tables(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path)
+    config_path, _ = make_config(
+        tmp_path,
+        perplex_dir,
+        planetprofile_filename="Pipeline_Exported_EOS.tab",
+    )
+    export_dir = tmp_path / "exported"
+
+    result = run_full_pipeline_export(config_path, export_dir)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Exporting PlanetProfile tables" in result.stdout
+    assert (export_dir / "Pipeline_Exported_EOS.tab").exists()
+    assert (export_dir / "planetprofile_export_manifest.json").exists()
 
 
 def test_missing_dat_file_fails_before_vertex(tmp_path: Path) -> None:

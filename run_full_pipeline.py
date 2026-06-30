@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+import export_planetprofile
 import make_compositions
 import plot_comparisons
 import run_perplex
@@ -23,6 +24,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Skip generating comparison SVGs after Perple_X validation passes.",
     )
+    parser.add_argument(
+        "--export-planetprofile",
+        action="store_true",
+        help="Copy validated native .tab files to a PlanetProfile-ready export directory.",
+    )
+    parser.add_argument(
+        "--planetprofile-export-dir",
+        default=str(export_planetprofile.DEFAULT_EXPORT_DIR),
+        help="Export directory used with --export-planetprofile.",
+    )
     return parser.parse_args(argv)
 
 
@@ -31,7 +42,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.skip_compositions:
         print("Generating compositions")
-        make_compositions.main()
+        composition_args = ["--config", args.config]
+        if args.project:
+            composition_args.extend(["--project", args.project])
+        make_compositions.main(composition_args)
 
     print("Running Perple_X pipeline")
     run_args = ["--config", args.config]
@@ -39,14 +53,31 @@ def main(argv: list[str] | None = None) -> int:
         run_args.extend(["--project", args.project])
 
     result = run_perplex.main(run_args)
-    if result != 0 or args.skip_plots:
+    if result != 0:
         return result
 
-    print("Generating comparison plots")
-    plot_args = ["--config", args.config]
-    if args.project:
-        plot_args.extend(["--project", args.project])
-    return plot_comparisons.main(plot_args)
+    if not args.skip_plots:
+        print("Generating comparison plots")
+        plot_args = ["--config", args.config]
+        if args.project:
+            plot_args.extend(["--project", args.project])
+        result = plot_comparisons.main(plot_args)
+        if result != 0:
+            return result
+
+    if args.export_planetprofile:
+        print("Exporting PlanetProfile tables")
+        export_args = [
+            "--config",
+            args.config,
+            "--planetprofile-export-dir",
+            args.planetprofile_export_dir,
+        ]
+        if args.project:
+            export_args.extend(["--project", args.project])
+        return export_planetprofile.main(export_args)
+
+    return 0
 
 
 if __name__ == "__main__":

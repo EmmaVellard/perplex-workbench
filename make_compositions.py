@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_CONFIG = BASE_DIR / "configs" / "models.json"
 OUTDIR = BASE_DIR / "compositions"
 
 # Keep this order fixed. Use the same order when answering BUILD prompts.
@@ -33,6 +35,8 @@ class LunarComposition:
     description: str
     raw_wt_percent: dict[str, float]
     source_note: str = MODEL_STATUS
+    scientific_status: str = "literature_proxy"
+    literature_proxy: bool = True
 
 
 def ordered_composition(composition: dict[str, float]) -> dict[str, float]:
@@ -50,6 +54,19 @@ def normalize_wt_percent(composition: dict[str, float]) -> dict[str, float]:
     return {oxide: value * 100.0 / total for oxide, value in ordered.items()}
 
 
+def config_base_dir(config_path: Path) -> Path:
+    if config_path.parent.name == "configs":
+        return config_path.parent.parent
+    return config_path.parent
+
+
+def resolve_path(value: str | Path, base_dir: Path = BASE_DIR) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    return (base_dir / path).resolve()
+
+
 def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     raw = ordered_composition(model.raw_wt_percent)
@@ -62,9 +79,9 @@ def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
         "oxide_order": OXIDE_ORDER,
         "composition_raw": raw,
         "composition_normalized": normalized,
-        "scientific_status": "literature_proxy",
+        "scientific_status": model.scientific_status,
         "placeholder": False,
-        "literature_proxy": True,
+        "literature_proxy": model.literature_proxy,
         "source_note": model.source_note,
         "notes": [
             MODEL_STATUS,
@@ -77,7 +94,7 @@ def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
     }
 
     json_path = outdir / f"{model.project}.json"
-    json_path.write_text(json.dumps(document, indent=2) + "\n")
+    json_path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
     values_path = outdir / f"{model.project}_bulk_values.txt"
     with values_path.open("w", encoding="utf-8") as handle:
@@ -97,6 +114,68 @@ def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
     print(f"Wrote {json_path}")
     print(f"Wrote {values_path}")
     print(f"Wrote {summary_path}")
+
+
+def model_from_config_entry(entry: dict) -> LunarComposition | None:
+    composition = (
+        entry.get("oxides_wt_percent")
+        or entry.get("raw_wt_percent")
+        or entry.get("composition_raw")
+    )
+    if composition is None:
+        return None
+    if not isinstance(composition, dict):
+        raise ValueError(f"Composition for {entry.get('project', '<unknown>')} must be a JSON object.")
+
+    project = entry.get("project")
+    if not project:
+        raise ValueError("Each inline composition model must define a project name.")
+    return LunarComposition(
+        project=project,
+        description=entry.get("description", project),
+        raw_wt_percent=composition,
+        source_note=entry.get("source_note", MODEL_STATUS),
+        scientific_status=entry.get("scientific_status", "user_defined"),
+        literature_proxy=bool(entry.get("literature_proxy", False)),
+    )
+
+
+def models_from_config(config_path: Path, project: str | None = None) -> list[LunarComposition]:
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Missing config file: {config_path}. Copy configs/models.example.json to configs/models.json "
+            "and set perplex_dir to your local Perple_X install."
+        )
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    models: list[LunarComposition] = []
+    for entry in data.get("models", []):
+        if project and entry.get("project") != project:
+            continue
+        model = model_from_config_entry(entry)
+        if model is not None:
+            models.append(model)
+
+    if project and not models:
+        configured_projects = {entry.get("project") for entry in data.get("models", [])}
+        if project in configured_projects:
+            return []
+        raise ValueError(f"Project not found in config: {project}")
+
+    return models
+
+
+def configured_or_default_models(config_path: Path, project: str | None = None) -> list[LunarComposition]:
+    if config_path.exists():
+        models = models_from_config(config_path, project=project)
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        if models or data.get("models"):
+            return models
+    if project:
+        selected = [model for model in lunar_models() if model.project == project]
+        if not selected:
+            raise ValueError(f"Project not found: {project}")
+        return selected
+    return lunar_models()
 
 
 def lunar_models() -> list[LunarComposition]:
@@ -148,9 +227,23 @@ def placeholder_models() -> list[LunarComposition]:
     return lunar_models()
 
 
-def main() -> None:
-    for model in lunar_models():
-        write_composition(model)
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate normalized composition files.")
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Path to models config.")
+    parser.add_argument("--project", help="Generate only one project from the config.")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    config_path = resolve_path(args.config, BASE_DIR)
+    models = configured_or_default_models(config_path, project=args.project)
+    if not models:
+        print("No inline compositions to generate; using configured composition files as-is.")
+        return
+    for model in models:
+        outdir = resolve_path("compositions", config_base_dir(config_path))
+        write_composition(model, outdir=outdir)
     print("\nWARNING:", MODEL_STATUS)
 
 

@@ -1,17 +1,44 @@
 {
   "perplex_dir": "/absolute/path/to/perplex",
+  "build_template_file": "build_inputs/lunar_stx21_template.build.in",
   "models": [
     {
       "project": "moon_far_dry_mantle",
-      "composition_file": "compositions/moon_far_dry_mantle.json",
-      "build_input_file": "build_inputs/moon_far_dry_mantle.build.in",
-      "output_dir": "outputs/moon_far_dry_mantle"
+      "description": "Farside/highlands-like depleted lunar terrane proxy based on published average highlands surface oxides",
+      "planetprofile_filename": "Moon_Far_Highlands_proxy_PerpleX.tab",
+      "scientific_status": "literature_proxy",
+      "literature_proxy": true,
+      "source_note": "Major oxides use a commonly tabulated lunar highlands average surface composition (SiO2 45.5, Al2O3 24.0, CaO 15.9, FeO 5.9, MgO 7.5, TiO2 0.6, Na2O 0.6 wt%). Used here as a farside/highlands proxy; not a directly sampled mantle composition.",
+      "oxides_wt_percent": {
+        "SiO2": 45.5,
+        "TiO2": 0.6,
+        "Al2O3": 24.0,
+        "FeO": 5.9,
+        "MgO": 7.5,
+        "CaO": 15.9,
+        "Na2O": 0.6,
+        "K2O": 0.0,
+        "P2O5": 0.0
+      }
     },
     {
       "project": "moon_near_pkt_mantle",
-      "composition_file": "compositions/moon_near_pkt_mantle.json",
-      "build_input_file": "build_inputs/moon_near_pkt_mantle.build.in",
-      "output_dir": "outputs/moon_near_pkt_mantle"
+      "description": "Nearside/maria-like enriched lunar terrane proxy based on published average maria surface oxides",
+      "planetprofile_filename": "Moon_Near_Maria_proxy_PerpleX.tab",
+      "scientific_status": "literature_proxy",
+      "literature_proxy": true,
+      "source_note": "Major oxides use a commonly tabulated lunar maria average surface composition (SiO2 45.4, Al2O3 14.9, CaO 11.8, FeO 14.1, MgO 9.2, TiO2 3.9, Na2O 0.6 wt%). Used here as a nearside/maria proxy; PKT/KREEP heat-producing elements should be treated separately.",
+      "oxides_wt_percent": {
+        "SiO2": 45.4,
+        "TiO2": 3.9,
+        "Al2O3": 14.9,
+        "FeO": 14.1,
+        "MgO": 9.2,
+        "CaO": 11.8,
+        "Na2O": 0.6,
+        "K2O": 0.0,
+        "P2O5": 0.0
+      }
     }
   ]
 }
