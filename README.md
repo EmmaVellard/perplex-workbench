@@ -1,24 +1,87 @@
 # Perple_X Workbench
 
-Objective: provide a local GUI-first workflow for defining rock/planetary compositions, running Perple_X BUILD/VERTEX/WERAMI, validating outputs, and exporting PlanetProfile-ready EOS tables.
+[![Tests](https://github.com/EmmaVellard/perplex-workbench/workflows/Tests/badge.svg)](https://github.com/EmmaVellard/perplex-workbench/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+
+A GUI-first workflow for defining rock/planetary compositions, running Perple_X BUILD/VERTEX/WERAMI, validating outputs, and exporting PlanetProfile-ready EOS tables.
 
 The included Moon near-side/far-side models are example smoke tests. They are useful for checking the workflow, not publication-ready lunar mantle compositions. For composition provenance and caveats, see [composition.md](composition.md).
 
-## Quick Start
+## Installation
 
+### Prerequisites
+- Python 3.9 or later
+- [Perple_X](https://github.com/jadconnolly/Perple_X) installed locally
+- Docker (optional, for containerized usage)
+
+### Quick Install
+
+**Option 1: From PyPI (when published)**
+```bash
+pip install perplex-workbench
+perplex-gui
+```
+
+**Option 2: From source**
 ```bash
 git clone https://github.com/EmmaVellard/perplex-workbench.git
 cd perplex-workbench
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp configs/models.example.json configs/models.json
-streamlit run perplex_workbench/gui/streamlit_app.py
+pip install -e .
+perplex-gui
 ```
 
-The app opens in your browser. Use `configs/models.json` as your local editable config; it is ignored by Git.
+**Option 3: Development install**
+```bash
+git clone https://github.com/EmmaVellard/perplex-workbench.git
+cd perplex-workbench
+pip install -e ".[dev]"
+pytest  # Run tests
+perplex-gui
+```
 
-Perple_X itself is an external dependency. Install it from [jadconnolly/Perple_X](https://github.com/jadconnolly/Perple_X), then set the GUI `Perple_X directory` to the local folder that contains BUILD, VERTEX, WERAMI, and the `datafiles/` directory.
+### First-Time Setup
+
+1. **Copy example config**
+   ```bash
+   cp configs/models.example.json configs/models.json
+   ```
+
+2. **Install Perple_X**
+   - Download from [jadconnolly/Perple_X](https://github.com/jadconnolly/Perple_X)
+   - Note the installation path (contains BUILD, VERTEX, WERAMI executables)
+
+3. **Launch the GUI**
+   ```bash
+   perplex-gui
+   # Or: streamlit run perplex_workbench/gui/streamlit_app.py
+   ```
+
+4. **Configure Perple_X path**
+   - In the GUI: Step 1 → enter your Perple_X directory path → Save
+   - Or edit `configs/models.json` and set `"perplex_dir": "/path/to/perplex"`
+
+The app opens in your browser at http://localhost:8501. Use `configs/models.json` as your local editable config; it is ignored by Git.
+
+### Docker Installation (Alternative)
+
+Run in an isolated container:
+
+```bash
+# Build image
+docker build -t perplex-workbench .
+
+# Run with GUI
+docker run -p 8501:8501 \
+  -v /path/to/perplex:/opt/perplex:ro \
+  -v $(pwd)/outputs:/app/outputs \
+  perplex-workbench
+
+# Or use docker-compose
+docker-compose up -d
+```
+
+See [DOCKER.md](DOCKER.md) for detailed Docker usage.
 
 ## GUI Workflow
 
@@ -38,27 +101,107 @@ GitHub hosts this workbench only; it does not include BUILD, VERTEX, WERAMI, or 
 
 Do not edit generated files in `compositions/` or `outputs/` as the source of truth. Edit or copy models through the GUI instead.
 
-## Current Limitations
+## Thermodynamic Databases
 
-- Supported composition fields are `SiO2`, `TiO2`, `Al2O3`, `FeO`, `MgO`, `CaO`, `Na2O`, `K2O`, and `P2O5`.
-- The default BUILD template currently passes only `NA2O MGO AL2O3 SIO2 CAO FEO` to Perple_X, so nonzero `TiO2`, `K2O`, and `P2O5` are recorded but omitted from BUILD.
-- The default thermodynamic setup uses `stx21ver.dat` and `stx21_solution_model.dat` from your local Perple_X installation.
+### Available Databases
 
-## Command Line
+**stx21 (default)** - Stixrude & Lithgow-Bertelloni 2021
+- Modeled oxides: Na2O, MgO, Al2O3, SiO2, CaO, FeO
+- Best for: Silicate mantles, standard compositions
+- Database file: `stx21ver.dat`
 
-The GUI calls the same Python scripts that can be run directly:
+**hp633** - Holland & Powell 2011 (v6.33)
+- Modeled oxides: Na2O, MgO, Al2O3, SiO2, CaO, FeO, TiO2, K2O, P2O5
+- Best for: Compositions requiring Ti, K, P
+- Database file: `hp633ver.dat`
+
+### Selecting a Database
+
+**In config file:**
+```json
+{
+  "database": "hp633",
+  "perplex_dir": "/path/to/perplex"
+}
+```
+
+**Via environment variable:**
+```bash
+export PERPLEX_DATABASE=hp633
+perplex-gui
+```
+
+**Via CLI flag:**
+```bash
+perplex-run --database hp633
+```
+
+The GUI still lets you record `TiO2`, `K2O`, and `P2O5` because they are common source-composition fields. With the default stx21 profile they are source-only: saved in metadata and plots, but not modeled by Perple_X. Use a custom thermodynamic database, solution model file, and BUILD input before interpreting Ti/K/P effects.
+
+## Command Line Interface
+
+After installation, all functionality is available via command-line tools:
 
 ```bash
-python3 run_full_pipeline.py
-python3 run_full_pipeline.py --project moon_far_highlands_surface_proxy
-python3 run_full_pipeline.py --export-planetprofile
+# Launch GUI
+perplex-gui
+
+# Run full pipeline
+perplex-pipeline
+perplex-pipeline --project moon_far_highlands_surface_proxy
+perplex-pipeline --export-planetprofile
+
+# Generate compositions only
+perplex-make-compositions --config configs/models.json
+
+# Run Perple_X (BUILD/VERTEX/WERAMI)
+perplex-run --config configs/models.json --project my_project
+
+# Export PlanetProfile tables
+perplex-export --config configs/models.json --planetprofile-export-dir outputs/export
+
+# Generate comparison plots
+perplex-plot --config configs/models.json --output-dir outputs/plots
 ```
+
+Legacy scripts at the repository root (`run_perplex.py`, `make_compositions.py`, etc.) still work for backward compatibility.
 
 ## Tests
 
 Tests use fake Perple_X executables, so real Perple_X is not required:
 
 ```bash
-pip install -r requirements-dev.txt
-python3 -m pytest
+pip install -e ".[dev]"
+pytest
 ```
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development setup
+- Code style guidelines
+- Testing requirements
+- Pull request process
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Citation
+
+If you use this software in your research, please cite:
+
+```bibtex
+@software{perplex_workbench,
+  author = {Vellard, Emma},
+  title = {Perple_X Workbench: GUI workflow for planetary thermodynamics},
+  year = {2024},
+  url = {https://github.com/EmmaVellard/perplex-workbench}
+}
+```
+
+## Acknowledgments
+
+- [Perple_X](https://github.com/jadconnolly/Perple_X) by James Connolly
+- [PlanetProfile](https://github.com/NASA-Planetary-Science/PlanetProfile) by NASA Planetary Science
+- Lunar composition data from Wikipedia and published literature (see [composition.md](composition.md))

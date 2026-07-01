@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.venv
+venv
+.pytest_cache
+.coverage
+htmlcov
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated outputs (will be mounted as volumes)
+outputs/*
+!outputs/README.md
+!outputs/examples
+compositions/*
+
+# Local config (will be mounted as volume)
+configs/models.json
+
+# Documentation (not needed in container)
+*.md
+!README.md
+docs/
+
+# Tests (not needed in production container)
+tests/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore

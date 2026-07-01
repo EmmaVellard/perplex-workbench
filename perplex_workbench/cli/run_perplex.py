@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""CLI entry point for run_perplex."""
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+# Add repo root to path for imports
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from perplex_workbench.cli.common import create_base_parser, setup_cli_environment, handle_cli_error
+import run_perplex
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run Perple_X pipeline with improved CLI.
+
+    Args:
+        argv: Command-line arguments (default: sys.argv[1:])
+
+    Returns:
+        Exit code
+    """
+    parser = create_base_parser(
+        prog="perplex-run",
+        description="Run Perple_X BUILD/VERTEX/WERAMI pipeline",
+    )
+    parser.add_argument(
+        "--project",
+        help="Run specific project only (default: all projects)",
+    )
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Skip output validation",
+    )
+
+    args = parser.parse_args(argv)
+
+    try:
+        config, logger = setup_cli_environment(args)
+
+        # Call original run_perplex.main with translated arguments
+        original_args = ["--config", str(config.to_dict())]
+
+        if hasattr(args, "project") and args.project:
+            original_args.extend(["--project", args.project])
+
+        if args.skip_validation:
+            original_args.append("--skip-validation")
+
+        return run_perplex.main(original_args)
+
+    except Exception as e:
+        from perplex_workbench.core.logging_config import get_logger
+        return handle_cli_error(get_logger(__name__), e)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

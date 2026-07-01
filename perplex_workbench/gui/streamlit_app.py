@@ -29,6 +29,7 @@ from perplex_workbench.core.config_io import (
 from perplex_workbench.core.model_schema import (
     ACTIVE_BUILD_COMPONENTS,
     OXIDE_ORDER,
+    SOURCE_ONLY_OXIDES,
     composition_plot_rows,
     new_model_template,
     omitted_oxides_for_model,
@@ -215,7 +216,7 @@ def rounded_oxide_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "oxide": row["oxide"],
             "your input wt%": round(float(row["raw_wt_percent"]), 2),
             "normalized to 100 wt%": round(float(row["normalized_wt_percent"]), 2),
-            "active in default BUILD": row["active_in_default_build"],
+            "default stx21 role": row["build_role"],
             "omitted from default BUILD": row["omitted_from_default_build"],
         }
         for row in rows
@@ -558,10 +559,12 @@ def composition_workspace(config_path: Path, config: dict[str, Any], models: lis
         base_oxides = {}
     edited["oxides_wt_percent"] = {}
     with oxide_col:
-        st.subheader("Oxides, wt%")
-        columns = st.columns(3)
-        for index, oxide in enumerate(OXIDE_ORDER):
-            with columns[index % 3]:
+        st.subheader("Modeled Oxides, wt%")
+        st.caption("These oxides are passed to the default stx21 BUILD template.")
+        modeled_oxides = [oxide for oxide in OXIDE_ORDER if oxide not in SOURCE_ONLY_OXIDES]
+        modeled_columns = st.columns(3)
+        for index, oxide in enumerate(modeled_oxides):
+            with modeled_columns[index % 3]:
                 edited["oxides_wt_percent"][oxide] = st.number_input(
                     oxide,
                     value=float(base_oxides.get(oxide, 0.0)),
@@ -570,10 +573,24 @@ def composition_workspace(config_path: Path, config: dict[str, Any], models: lis
                     format="%.2f",
                     key=f"workspace_oxide_{choice_key}_{oxide}",
                 )
+        st.subheader("Source-Only Oxides, wt%")
+        st.caption("Saved in the composition record, plots, and warnings, but not passed to default stx21 BUILD.")
+        source_columns = st.columns(3)
+        for index, oxide in enumerate(SOURCE_ONLY_OXIDES):
+            with source_columns[index % 3]:
+                edited["oxides_wt_percent"][oxide] = st.number_input(
+                    oxide,
+                    value=float(base_oxides.get(oxide, 0.0)),
+                    min_value=0.0,
+                    step=0.01,
+                    format="%.2f",
+                    key=f"workspace_source_oxide_{choice_key}_{oxide}",
+                )
         st.info(
-            "This first GUI version supports only these oxides: "
-            + ", ".join(OXIDE_ORDER)
-            + ". To use other elements or components, the BUILD template and component schema must be extended first."
+            "The default stx21 profile models only "
+            + ", ".join(modeled_oxides)
+            + ". TiO2, K2O, and P2O5 remain editable because they are common source-composition fields, "
+            "but they need a different thermodynamic setup before they can affect Perple_X results."
         )
         with st.expander("Why can't I add other elements here?"):
             st.write(

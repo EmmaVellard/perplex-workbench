@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  perplex-workbench:
+    build: .
+    image: perplex-workbench:1.0
+    container_name: perplex-workbench
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount your Perple_X installation
+      - /path/to/your/perplex:/opt/perplex:ro
+      # Mount local outputs directory
+      - ./outputs:/app/outputs
+      # Mount local compositions directory
+      - ./compositions:/app/compositions
+      # Mount local config (optional - will use example if not present)
+      - ./configs/models.json:/app/configs/models.json
+    environment:
+      - PERPLEX_DIR=/opt/perplex
+      - PERPLEX_DATABASE=stx21
+      - PERPLEX_LOG_LEVEL=INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Optional: Run CLI commands in a separate container
+  perplex-cli:
+    build: .
+    image: perplex-workbench:1.0
+    container_name: perplex-cli
+    volumes:
+      - /path/to/your/perplex:/opt/perplex:ro
+      - ./outputs:/app/outputs
+      - ./compositions:/app/compositions
+      - ./configs/models.json:/app/configs/models.json
+    environment:
+      - PERPLEX_DIR=/opt/perplex
+      - PERPLEX_DATABASE=stx21
+    # Override command to run bash (for interactive use)
+    command: /bin/bash
+    stdin_open: true
+    tty: true

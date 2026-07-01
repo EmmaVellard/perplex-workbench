@@ -10,6 +10,7 @@ import run_perplex
 OXIDE_ORDER = tuple(make_compositions.OXIDE_ORDER)
 ACTIVE_BUILD_COMPONENTS = tuple(run_perplex.PERPLEX_COMPONENTS)
 ACTIVE_BUILD_OXIDES = {oxide for oxide, _ in ACTIVE_BUILD_COMPONENTS}
+SOURCE_ONLY_OXIDES = tuple(oxide for oxide in OXIDE_ORDER if oxide not in ACTIVE_BUILD_OXIDES)
 DEFAULT_SCIENTIFIC_STATUS = "surface_proxy_smoke_test"
 DEFAULT_MODEL_SCOPE = "surface_terrane_proxy"
 DEFAULT_PLANETPROFILE_READINESS = "mechanically_exportable_not_scientifically_final"
@@ -106,6 +107,7 @@ def oxide_table_rows(model: dict[str, Any]) -> list[dict[str, Any]]:
             "oxide": oxide,
             "raw_wt_percent": raw[oxide],
             "normalized_wt_percent": normalized[oxide],
+            "build_role": "modeled by default stx21 BUILD" if oxide in ACTIVE_BUILD_OXIDES else "source-only in default stx21",
             "active_in_default_build": oxide in ACTIVE_BUILD_OXIDES,
             "omitted_from_default_build": oxide in omitted,
         }
@@ -161,6 +163,7 @@ def scientific_guardrail_text(model: dict[str, Any]) -> str:
     return (
         f"Scientific status: {model.get('scientific_status', 'unknown')}\n"
         f"PlanetProfile readiness: {model.get('planetprofile_readiness', 'unknown')}\n"
-        f"Omitted oxides: {omitted_names}\n"
+        f"Source-only oxides in default stx21 BUILD: {', '.join(SOURCE_ONLY_OXIDES)}\n"
+        f"Nonzero omitted oxides: {omitted_names}\n"
         f"Use as final Moon mantle EOS: {'yes' if use_as_final_moon_mantle_eos(model) else 'no'}"
     )

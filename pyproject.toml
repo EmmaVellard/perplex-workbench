@@ -1,0 +1,102 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "perplex-workbench"
+version = "1.0"
+description = "A GUI-first workflow for defining rock/planetary compositions, running Perple_X, and exporting PlanetProfile-ready EOS tables"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Emma Vellard", email = "emma.vellard@outlook.fr"}
+]
+maintainers = [
+    {name = "Emma Vellard", email = "emma.vellard@outlook.fr"}
+]
+keywords = [
+    "perplexX",
+    "thermodynamics",
+    "planetary-science",
+    "geophysics",
+    "equation-of-state",
+    "lunar-science"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "streamlit>=1.39.0,<2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/EmmaVellard/perplex-workbench"
+Repository = "https://github.com/EmmaVellard/perplex-workbench"
+Issues = "https://github.com/EmmaVellard/perplex-workbench/issues"
+Documentation = "https://github.com/EmmaVellard/perplex-workbench#readme"
+
+[project.scripts]
+perplex-gui = "perplex_workbench.cli.gui:main"
+perplex-run = "perplex_workbench.cli.run_perplex:main"
+perplex-make-compositions = "perplex_workbench.cli.make_compositions:main"
+perplex-export = "perplex_workbench.cli.export_planetprofile:main"
+perplex-plot = "perplex_workbench.cli.plot_comparisons:main"
+perplex-pipeline = "perplex_workbench.cli.run_full_pipeline:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["perplex_workbench*"]
+exclude = ["tests*", "outputs*", "compositions*", "configs*", "build_inputs*"]
+
+[tool.setuptools.package-data]
+perplex_workbench = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.black]
+line-length = 120
+target-version = ["py39", "py310", "py311", "py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    \.git
+  | \.venv
+  | build
+  | dist
+  | outputs
+  | compositions
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+skip_gitignore = true
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
