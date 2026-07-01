@@ -509,8 +509,16 @@ def run_model(perplex_dir: Path, model: ModelConfig) -> None:
     print(f"Wrote {option_path}")
     run_build_if_input_exists(perplex_dir, model)
     require_dat_file(model.work_dir, model.project)
-    run_vertex(perplex_dir, model)
-    tab_path = run_werami(perplex_dir, model)
+
+    try: 
+        run_vertex(perplex_dir, model)
+        tab_path = run_werami(perplex_dir, model)
+    except Exception as e:
+        # Write a failed validation report before re-raising
+        validation_report_path = model.output_dir / "validation_report.txt"
+        validation_report_path.parent.mkdir(parents=True, exist_ok=True)
+        validation_report_path.write_text(f"STATUS: FAIL\nError: {str(e)}\n")
+        raise
 
     result = validate_project_output(model.project, model.output_dir, tab_path=tab_path)
     print(result.report_path.read_text())
