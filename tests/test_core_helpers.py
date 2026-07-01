@@ -49,6 +49,22 @@ def test_config_load_save_and_replace_model(tmp_path: Path) -> None:
     assert deleted["models"] == []
 
 
+def test_delete_model_entries_removes_multiple_projects() -> None:
+    first = example_model()
+    second = dict(example_model(), project="second_model")
+    third = dict(example_model(), project="third_model")
+    config = {"perplex_dir": "/tmp/perplex", "models": [first, second, third]}
+
+    updated = config_io.delete_model_entries(config, ["moon_test_surface_proxy", "third_model"])
+
+    assert [model["project"] for model in updated["models"]] == ["second_model"]
+    assert [model["project"] for model in config["models"]] == [
+        "moon_test_surface_proxy",
+        "second_model",
+        "third_model",
+    ]
+
+
 def test_model_validation_normalization_and_omitted_oxides() -> None:
     model = example_model()
 

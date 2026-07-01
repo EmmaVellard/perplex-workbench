@@ -19,6 +19,7 @@ from perplex_workbench.core.config_io import (
     EXAMPLE_CONFIG_PATH,
     copy_example_config,
     delete_model_entry,
+    delete_model_entries,
     list_model_entries,
     load_config_json,
     replace_model_entry,
@@ -308,13 +309,38 @@ def confirm_delete_model_dialog(config_path: Path, config: dict[str, Any], proje
             st.rerun()
 
 
+@st.dialog("Confirm Model Deletion")
+def confirm_delete_models_dialog(config_path: Path, config: dict[str, Any], projects_to_delete: list[str]) -> None:
+    projects = [project for project in projects_to_delete if project]
+    st.warning(f"Delete {len(projects)} saved model(s) from `configs/models.json`?")
+    for project in projects:
+        st.write(f"- `{project}`")
+    st.caption(
+        "Generated composition files, Perple_X work folders, and exported PlanetProfile tables will not be removed."
+    )
+    cancel_col, delete_col = st.columns(2)
+    with cancel_col:
+        if st.button("Cancel", width="stretch", key="cancel_multi_delete"):
+            st.session_state.pop("delete_model_dialog_projects", None)
+            st.rerun()
+    with delete_col:
+        if st.button("Delete models", type="primary", width="stretch", key="confirm_multi_delete"):
+            updated_config = delete_model_entries(config, projects)
+            save_config_json(config_path, updated_config)
+            st.session_state.pop("delete_model_dialog_projects", None)
+            st.session_state["delete_model_notice"] = (
+                f"Deleted {len(projects)} saved model(s) from config. Generated output files were not removed."
+            )
+            st.rerun()
+
+
 def delete_model_panel(
     config_path: Path,
     config: dict[str, Any],
     models: list[dict[str, Any]],
     selected_project: str,
 ) -> None:
-    st.subheader("Delete Saved Model")
+    st.subheader("Delete Saved Model(s)")
     st.caption(
         "This removes a model block from `configs/models.json` only. "
         "Generated composition files, Perple_X work folders, and exported tables are left untouched."
@@ -324,20 +350,28 @@ def delete_model_panel(
         return
 
     project_options = [str(model.get("project", "")) for model in models]
-    default_index = project_options.index(selected_project) if selected_project in project_options else 0
-    project_to_delete = st.selectbox(
-        "Saved model to delete",
+    default_projects = [selected_project] if selected_project in project_options else []
+    projects_to_delete = st.multiselect(
+        "Saved models to delete",
         options=project_options,
-        index=default_index,
-        key="delete_model_project",
+        default=default_projects,
+        key="delete_model_projects",
         format_func=lambda project: model_label(next(model for model in models if model.get("project") == project)),
     )
-    if st.button("Delete saved model", type="secondary"):
-        st.session_state["delete_model_dialog_project"] = project_to_delete
+    if not projects_to_delete:
+        st.info("Select one or more saved models to delete.")
+    too_many = len(projects_to_delete) >= len(models)
+    if too_many:
+        st.error("At least one saved model must remain in the config.")
+    if st.button("Delete selected model(s)", type="secondary", disabled=not projects_to_delete or too_many):
+        st.session_state["delete_model_dialog_projects"] = projects_to_delete
 
     pending_delete = st.session_state.get("delete_model_dialog_project")
     if isinstance(pending_delete, str) and pending_delete:
         confirm_delete_model_dialog(config_path, config, pending_delete)
+    pending_delete_projects = st.session_state.get("delete_model_dialog_projects")
+    if isinstance(pending_delete_projects, list) and pending_delete_projects:
+        confirm_delete_models_dialog(config_path, config, pending_delete_projects)
 
 
 def set_workflow_step(index: int) -> None:
@@ -351,9 +385,11 @@ def set_workspace_mode(mode: str) -> None:
 
 
 def run_streamlit_command(command: PipelineCommand) -> None:
-    st.caption(command.label)
-    st.code(command.display, language="bash")
-    output_box = st.empty()
+    status = st.status(f"Running {command.label}...", state="running", expanded=True)
+    with status:
+        st.caption("Command")
+        st.code(command.display, language="bash")
+        output_box = st.empty()
     output_lines: list[str] = []
     try:
         process = subprocess.Popen(
@@ -365,7 +401,9 @@ def run_streamlit_command(command: PipelineCommand) -> None:
             bufsize=1,
         )
     except OSError as exc:
-        st.error(f"Could not start command: {exc}")
+        status.update(label=f"Could not start {command.label}", state="error", expanded=True)
+        with status:
+            st.error(f"Could not start command: {exc}")
         return
 
     assert process.stdout is not None
@@ -375,9 +413,11 @@ def run_streamlit_command(command: PipelineCommand) -> None:
     returncode = process.wait()
     output_box.code("".join(output_lines), language="text")
     if returncode == 0:
-        st.success("Command completed successfully.")
+        status.update(label=f"Complete: {command.label}", state="complete", expanded=False)
     else:
-        st.error(f"Command failed with return code {returncode}.")
+        status.update(label=f"Failed: {command.label}", state="error", expanded=True)
+        with status:
+            st.error(f"Command failed with return code {returncode}.")
 
 
 def editable_model_form(config_path: Path, config: dict[str, Any], model: dict[str, Any]) -> None:
@@ -861,7 +901,7 @@ def main() -> None:
         st.divider()
         st.subheader("Saved models")
         show_model_catalog(models, selected_project, database=current_database)
-        with st.expander("Delete a saved model"):
+        with st.expander("Delete saved model(s)"):
             delete_model_panel(config_path, config, models, selected_project)
         return
 
@@ -908,7 +948,7 @@ def main() -> None:
             "The selected model is the one used by Review, Generate, Run, and Export."
         )
         show_model_catalog(models, selected_project, database=current_database)
-        with st.expander("Delete a saved model"):
+        with st.expander("Delete saved model(s)"):
             delete_model_panel(config_path, config, models, selected_project)
 
     elif step == "2. Review":
@@ -932,39 +972,69 @@ def main() -> None:
     elif step == "3. Generate Files":
         st.header("Step 3. Generate Files")
         st.write("This step runs `make_compositions.py` and writes generated files under `compositions/`.")
-        st.subheader("Generate selected saved model")
-        st.caption(f"Only writes generated composition files for `{selected_project}`.")
-        if st.button("Generate selected composition"):
-            run_streamlit_command(generate_compositions_command(config_path, selected_project))
-        st.divider()
-        st.subheader("Generate all saved models")
-        st.caption("Writes generated composition files for every model listed in `configs/models.json`.")
-        if st.button("Generate all compositions"):
-            run_streamlit_command(generate_compositions_command(config_path))
+        project_options = [str(model.get("project", "")) for model in models]
+        default_projects = [selected_project] if selected_project in project_options else project_options[:1]
+        projects_to_generate = st.multiselect(
+            "Saved models to generate",
+            options=project_options,
+            default=default_projects,
+            key="generate_model_projects",
+            format_func=lambda project: model_label(next(model for model in models if model.get("project") == project)),
+            help="Choose one or more saved model entries from configs/models.json.",
+        )
+        st.caption(
+            "Generated composition JSON, bulk-value, and summary files are written under `compositions/`."
+        )
+        if not projects_to_generate:
+            st.info("Select at least one saved model to generate.")
+        if st.button("Generate selected file(s)", disabled=not projects_to_generate):
+            if len(projects_to_generate) == len(project_options):
+                run_streamlit_command(generate_compositions_command(config_path))
+            else:
+                for project in projects_to_generate:
+                    run_streamlit_command(generate_compositions_command(config_path, project))
 
     elif step == "4. Run Perple_X":
         st.header("Step 4. Run Perple_X")
         st.warning("Perple_X must be installed locally. The included lunar models are still smoke-test surface proxies.")
-        st.subheader("Run selected saved model")
-        st.caption(f"Runs BUILD/VERTEX/WERAMI/validation only for `{selected_project}`.")
-        if st.button("Run selected model"):
-            run_streamlit_command(full_pipeline_command(config_path, project=selected_project))
-        st.divider()
-        st.subheader("Run all saved models")
-        st.caption("Runs the full pipeline for every model listed in `configs/models.json`.")
-        if st.button("Run all models"):
-            run_streamlit_command(full_pipeline_command(config_path))
-        st.divider()
-        st.subheader("Run all saved models and export")
-        st.caption("Runs all models, validates them, then copies PlanetProfile-format tables to the export directory.")
-        if st.button("Run all and export"):
-            run_streamlit_command(
-                full_pipeline_command(
-                    config_path,
-                    export_planetprofile=True,
-                    export_dir=export_dir,
+        project_options = [str(model.get("project", "")) for model in models]
+        default_projects = [selected_project] if selected_project in project_options else project_options[:1]
+        projects_to_run = st.multiselect(
+            "Saved models to run",
+            options=project_options,
+            default=default_projects,
+            key="run_model_projects",
+            format_func=lambda project: model_label(next(model for model in models if model.get("project") == project)),
+            help="Choose one or more saved model entries from configs/models.json.",
+        )
+        export_after_run = st.checkbox(
+            "Export PlanetProfile tables after run",
+            value=False,
+            help="After validation succeeds, copy native PlanetProfile-format tables to the export directory.",
+        )
+        if export_after_run:
+            st.caption(f"Export directory: `{export_dir}`")
+        if not projects_to_run:
+            st.info("Select at least one saved model to run.")
+        if st.button("Run selected model(s)", disabled=not projects_to_run):
+            if len(projects_to_run) == len(project_options):
+                run_streamlit_command(
+                    full_pipeline_command(
+                        config_path,
+                        export_planetprofile=export_after_run,
+                        export_dir=export_dir if export_after_run else None,
+                    )
                 )
-            )
+            else:
+                for project in projects_to_run:
+                    run_streamlit_command(
+                        full_pipeline_command(
+                            config_path,
+                            project=project,
+                            export_planetprofile=export_after_run,
+                            export_dir=export_dir if export_after_run else None,
+                        )
+                    )
 
     elif step == "5. Validate / Export":
         st.header("Step 5. Validate / Export")

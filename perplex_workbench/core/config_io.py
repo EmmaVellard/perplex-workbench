@@ -67,14 +67,19 @@ def replace_model_entry(config: dict[str, Any], project: str, replacement: dict[
 
 
 def delete_model_entry(config: dict[str, Any], project: str) -> dict[str, Any]:
+    return delete_model_entries(config, [project])
+
+
+def delete_model_entries(config: dict[str, Any], projects: list[str]) -> dict[str, Any]:
     updated = deepcopy(config)
     models = updated.setdefault("models", [])
     if not isinstance(models, list):
         raise ValueError("Config field 'models' must be a list.")
+    project_set = set(projects)
     updated["models"] = [
         model
         for model in models
-        if not (isinstance(model, dict) and model.get("project") == project)
+        if not (isinstance(model, dict) and model.get("project") in project_set)
     ]
     return updated
 

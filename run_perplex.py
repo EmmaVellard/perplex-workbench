@@ -619,6 +619,10 @@ def werami_input_text(model: ModelConfig) -> str:
     return f"{model.project}\n" + "\n".join(model.werami_input_sequence) + "\n"
 
 
+def template_path(path: Path) -> str:
+    return path.as_posix()
+
+
 def render_build_input(perplex_dir: Path, model: ModelConfig) -> str:
     text = model.build_input_file.read_text()
     build_title = model.project
@@ -629,11 +633,11 @@ def render_build_input(perplex_dir: Path, model: ModelConfig) -> str:
         except json.JSONDecodeError:
             build_title = model.project
     replacements = {
-        "${PERPLEX_DIR}": str(perplex_dir),
+        "${PERPLEX_DIR}": template_path(perplex_dir),
         "${PROJECT}": model.project,
-        "${COMPOSITION_FILE}": str(model.composition_file),
-        "${OUTPUT_DIR}": str(model.output_dir),
-        "${WORK_DIR}": str(model.work_dir),
+        "${COMPOSITION_FILE}": template_path(model.composition_file),
+        "${OUTPUT_DIR}": template_path(model.output_dir),
+        "${WORK_DIR}": template_path(model.work_dir),
         "${BUILD_TITLE}": build_title,
     }
     if "${PERPLEX_BULK_VALUES}" in text:

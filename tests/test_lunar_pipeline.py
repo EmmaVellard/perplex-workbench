@@ -42,6 +42,10 @@ P(bar) T(K) rho_kgm3 VP_kms VS_kms Cp_Jm3K alpha_pK KS_bar GS_bar
 """
 
 
+def slash_path(path: Path) -> str:
+    return path.as_posix()
+
+
 def write_executable(path: Path, body: str) -> None:
     path.write_text("#!/usr/bin/env python3\n" + body)
     path.chmod(path.stat().st_mode | 0o111)
@@ -323,7 +327,7 @@ def test_render_build_input_expands_bulk_values_from_composition(tmp_path: Path)
 
     rendered = run_perplex.render_build_input(tmp_path / "fake_perplex", model)
 
-    assert str(tmp_path / "fake_perplex") in rendered
+    assert slash_path(tmp_path / "fake_perplex") in rendered.replace("\\", "/")
     assert "0.60060060 9.20920921 14.91491491 45.44544545 11.81181181 14.11411411" in rendered
 
 
@@ -478,6 +482,23 @@ def test_planetprofile_native_conversion(tmp_path: Path) -> None:
     assert lines[12].startswith("T(K)")
 
 
+def test_phase_diagram_property_points_support_velocity_columns(tmp_path: Path) -> None:
+    from perplex_workbench.gui import phase_diagram
+
+    source = tmp_path / "source.tab"
+    source.write_text(VALID_TAB)
+
+    t_points, p_points, values, config = phase_diagram.property_points_from_tab(
+        source,
+        "P-wave velocity",
+    )
+
+    assert config["canonical"] == "vp_kms"
+    assert t_points == [1200.0, 1200.0, 1300.0, 1300.0]
+    assert p_points == [0.1, 0.2, 0.1, 0.2]
+    assert values == [8.0, 8.05, 8.06, 8.1]
+
+
 def test_export_planetprofile_copies_native_tables_with_manifest(tmp_path: Path) -> None:
     perplex_dir = make_fake_perplex(tmp_path)
     config_path, output_dir = make_config(
@@ -615,7 +636,7 @@ def test_successful_run_validates_with_fake_perplex(tmp_path: Path) -> None:
     assert not (perplex_dir / f"{PROJECT}.dat").exists()
     build_log = (output_dir / "build.log").read_text()
     assert "${PERPLEX_DIR}" not in build_log
-    assert str(perplex_dir / "datafiles" / "example.dat") in build_log
+    assert slash_path(perplex_dir / "datafiles" / "example.dat") in build_log.replace("\\", "/")
     assert "STATUS: PASS" in (output_dir / "validation_report.txt").read_text()
 
 

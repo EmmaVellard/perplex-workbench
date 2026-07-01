@@ -11,7 +11,84 @@ from perplex_workbench.core.phase_parser import get_pt_grid_from_tab, parse_vert
 from perplex_workbench.core.validation_summary import model_output_paths
 
 
-def plot_phase_diagram_interactive(model: dict[str, Any], output_dir: Path):
+PROPERTY_OPTIONS = {
+    "Density": {
+        "canonical": "rho_kgm3",
+        "label": "Density",
+        "unit": "kg/m3",
+        "colorbar": "rho (kg/m3)",
+        "colorscale": "Viridis",
+    },
+    "P-wave velocity": {
+        "canonical": "vp_kms",
+        "label": "P-wave velocity",
+        "unit": "km/s",
+        "colorbar": "Vp (km/s)",
+        "colorscale": "Plasma",
+    },
+    "S-wave velocity": {
+        "canonical": "vs_kms",
+        "label": "S-wave velocity",
+        "unit": "km/s",
+        "colorbar": "Vs (km/s)",
+        "colorscale": "Cividis",
+    },
+}
+GRID_ONLY_OPTION = "None (grid only)"
+
+
+def property_points_from_tab(tab_path: Path, property_choice: str) -> tuple[list[float], list[float], list[float], dict[str, str]]:
+    """Read P-T-property points from a PlanetProfile table."""
+    from validate_tab import column_indices, read_tab
+
+    property_config = PROPERTY_OPTIONS[property_choice]
+    tab = read_tab(tab_path)
+    indices = column_indices(tab.headers)
+    p_index = indices["p_bar"]
+    t_index = indices["t_k"]
+    property_index = indices[property_config["canonical"]]
+
+    t_points: list[float] = []
+    p_points: list[float] = []
+    property_values: list[float] = []
+    for row in tab.rows:
+        pressure = row[p_index]
+        temperature = row[t_index]
+        value = row[property_index]
+        if abs(pressure) < 1e90 and abs(temperature) < 1e90 and abs(value) < 1e90:
+            p_points.append(pressure * 1e-4)
+            t_points.append(temperature)
+            property_values.append(value)
+
+    return t_points, p_points, property_values, property_config
+
+
+def grid_points_from_tab(tab_path: Path) -> tuple[list[float], list[float]]:
+    """Read P-T grid points from a PlanetProfile table."""
+    from validate_tab import column_indices, read_tab
+
+    tab = read_tab(tab_path)
+    indices = column_indices(tab.headers)
+    p_index = indices["p_bar"]
+    t_index = indices["t_k"]
+
+    t_points: list[float] = []
+    p_points: list[float] = []
+    for row in tab.rows:
+        pressure = row[p_index]
+        temperature = row[t_index]
+        if abs(pressure) < 1e90 and abs(temperature) < 1e90:
+            p_points.append(pressure * 1e-4)
+            t_points.append(temperature)
+
+    return t_points, p_points
+
+
+def plot_phase_diagram_interactive(
+    model: dict[str, Any],
+    output_dir: Path,
+    property_choice: str = "Density",
+):
     """Create interactive P-T phase diagram with Plotly.
 
     Note: Phase diagrams require structured phase data from VERTEX.
@@ -45,38 +122,22 @@ def plot_phase_diagram_interactive(model: dict[str, Any], output_dir: Path):
         st.error("❌ Could not extract P-T grid from output file")
         return
 
-    # Create figure
     fig = go.Figure()
 
-    # Show P-T coverage as scatter
     try:
-        from validate_tab import column_indices, read_tab
+        if property_choice in PROPERTY_OPTIONS:
+            t_points, p_points, property_values, property_config = property_points_from_tab(
+                tab_path,
+                property_choice,
+            )
+            if not property_values:
+                st.warning(f"No finite values found for {property_choice}; showing P-T grid only.")
+                t_points, p_points = grid_points_from_tab(tab_path)
+                property_choice = GRID_ONLY_OPTION
+        else:
+            t_points, p_points = grid_points_from_tab(tab_path)
 
-        tab = read_tab(tab_path)
-        indices = column_indices(tab.headers)
-
-        p_index = indices["p_bar"]
-        t_index = indices["t_k"]
-
-        # Extract all P-T points
-        p_points = []
-        t_points = []
-        rho_points = []
-
-        rho_index = indices.get("rho_kgm3")
-
-        for row in tab.rows:
-            p = row[p_index]
-            t = row[t_index]
-            if abs(p) < 1e90 and abs(t) < 1e90:
-                p_points.append(p * 1e-4)  # Convert to GPa
-                t_points.append(t)
-                if rho_index is not None:
-                    rho = row[rho_index]
-                    rho_points.append(rho if abs(rho) < 1e90 else None)
-
-        # Create contour plot for density
-        if rho_points and st.checkbox("Show density contours", value=True):
+        if property_choice in PROPERTY_OPTIONS:
             fig.add_trace(
                 go.Scatter(
                     x=t_points,
@@ -84,20 +145,20 @@ def plot_phase_diagram_interactive(model: dict[str, Any], output_dir: Path):
                     mode="markers",
                     marker=dict(
                         size=8,
-                        color=rho_points,
-                        colorscale="Viridis",
+                        color=property_values,
+                        colorscale=property_config["colorscale"],
                         showscale=True,
-                        colorbar=dict(title="ρ (kg/m³)"),
+                        colorbar=dict(title=property_config["colorbar"]),
                     ),
-                    name="Density",
+                    name=property_config["label"],
                     hovertemplate="<b>P-T Point</b><br>"
                     + "T: %{x:.0f} K<br>"
                     + "P: %{y:.2f} GPa<br>"
-                    + "ρ: %{marker.color:.1f} kg/m³<extra></extra>",
+                    + f"{property_config['label']}: "
+                    + f"%{{marker.color:.3g}} {property_config['unit']}<extra></extra>",
                 )
             )
         else:
-            # Just show grid points
             fig.add_trace(
                 go.Scatter(
                     x=t_points,
@@ -115,7 +176,7 @@ def plot_phase_diagram_interactive(model: dict[str, Any], output_dir: Path):
 
     # Layout
     fig.update_layout(
-        title=f"P-T Coverage: {project}",
+        title=f"P-T Coverage: {project}" if property_choice == GRID_ONLY_OPTION else f"{property_choice}: {project}",
         xaxis_title="Temperature (K)",
         yaxis_title="Pressure (GPa)",
         hovermode="closest",
@@ -134,7 +195,7 @@ def plot_phase_diagram_interactive(model: dict[str, Any], output_dir: Path):
     col3.metric("Grid points", len(p_points))
 
     st.info(
-        "ℹ️ **Note**: Full phase diagrams with phase boundaries require additional VERTEX configuration. "
+        "**Note**: Full phase diagrams with phase boundaries require additional VERTEX configuration. "
         "This plot shows the P-T coverage and property distribution from WERAMI output."
     )
 
@@ -167,15 +228,9 @@ def show_phase_diagram_panel(models: list[dict[str, Any]], selected_project: str
         st.caption("**Property to visualize**")
         prop_choice = st.radio(
             "Property",
-            ["Density", "P-wave velocity", "S-wave velocity", "None (grid only)"],
+            [*PROPERTY_OPTIONS.keys(), GRID_ONLY_OPTION],
             horizontal=True,
             label_visibility="collapsed",
         )
 
-    # Plot
-    plot_phase_diagram_interactive(selected_model, output_dir)
-
-    # Additional property plots if requested
-    if prop_choice != "None (grid only)" and prop_choice != "Density":
-        st.caption(f"**{prop_choice} visualization**")
-        st.info("Additional property overlays coming in future updates")
+    plot_phase_diagram_interactive(selected_model, output_dir, property_choice=prop_choice)
