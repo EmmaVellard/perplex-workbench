@@ -1,0 +1,37 @@
+${PROJECT}
+${PERPLEX_DIR}/datafiles/hp633ver.dat
+
+n
+
+n
+n
+Na2O
+MgO
+Al2O3
+SiO2
+K2O
+CaO
+TiO2
+FeO
+
+n
+1
+1000 50000
+800 2200
+y
+${PERPLEX_BULK_VALUES}
+n
+y
+n
+
+y
+${PERPLEX_DIR}/datafiles/solution_model.dat
+O(HP)
+Opx(HP)
+Cpx(HP)
+Gt(HP)
+Sp(HP)
+Pl(I1,HP)
+Ilm(WPH)
+
+${BUILD_TITLE}

@@ -15,5 +15,13 @@ P2O5        0.00000
 
 Total: 100.00000
 
-Omitted from default stx21 BUILD:
+stx21 BUILD values, normalized wt%:
+NA2O        0.60000
+MGO         7.50000
+AL2O3      24.00000
+SIO2       45.50000
+CAO        15.90000
+FEO         5.90000
+
+Source-only / omitted from stx21 BUILD:
 TiO2        0.60000

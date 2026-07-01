@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
-from perplex_workbench.core.config import DATABASES, ThermodynamicDatabase
+from perplex_workbench.core.config import DATABASES
 from perplex_workbench.core.constants import OXIDE_ORDER
 
 
@@ -23,9 +22,6 @@ def get_database_components(database_name: str) -> tuple[tuple[str, str], ...]:
     if database_name not in DATABASES:
         raise ValueError(f"Unknown database: {database_name}")
 
-    db_config = DATABASES[database_name]
-
-    # For stx21: same as current PERPLEX_COMPONENTS
     if database_name == "stx21":
         return (
             ("Na2O", "NA2O"),
@@ -36,18 +32,17 @@ def get_database_components(database_name: str) -> tuple[tuple[str, str], ...]:
             ("FeO", "FEO"),
         )
 
-    # For hp633: includes Ti, K, P
     elif database_name == "hp633":
+        # Match the component names declared by hp633ver.dat. It does not declare P2O5.
         return (
-            ("Na2O", "NA2O"),
-            ("MgO", "MGO"),
-            ("Al2O3", "AL2O3"),
-            ("SiO2", "SIO2"),
-            ("CaO", "CAO"),
-            ("FeO", "FEO"),
+            ("Na2O", "Na2O"),
+            ("MgO", "MgO"),
+            ("Al2O3", "Al2O3"),
+            ("SiO2", "SiO2"),
             ("K2O", "K2O"),
-            ("TiO2", "TIO2"),
-            ("P2O5", "P2O5"),
+            ("CaO", "CaO"),
+            ("TiO2", "TiO2"),
+            ("FeO", "FeO"),
         )
 
     # Default: return stx21 components

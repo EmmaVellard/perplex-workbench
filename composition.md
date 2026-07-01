@@ -56,7 +56,7 @@ The pipeline normalizes these values before writing the composition artifacts. T
 
 ## Values Passed To BUILD
 
-The current BUILD transcripts use `stx21ver.dat` and `stx21_solution_model.dat`. In this database setup, the active Perple_X components are:
+The default BUILD transcript uses `stx21ver.dat` and `stx21_solution_model.dat`. The upstream Perple_X `stx21ver.dat` component block declares `NA2O`, `MGO`, `AL2O3`, `SIO2`, `CAO`, `FEO`, and `O2`. The workbench treats `O2` as a redox/internal database component and passes the six bulk oxide components below to BUILD:
 
 ```text
 NA2O MGO AL2O3 SIO2 CAO FEO
@@ -69,9 +69,9 @@ Therefore `run_perplex.py` expands `${PERPLEX_BULK_VALUES}` in this order:
 | `moon_far_highlands_surface_proxy` | `0.60000000 7.50000000 24.00000000 45.50000000 15.90000000 5.90000000` |
 | `moon_near_maria_surface_proxy` | `0.60060060 9.20920921 14.91491491 45.44544545 11.81181181 14.11411411` |
 
-TiO2, K2O, and P2O5 remain in the JSON composition records, but they are omitted from BUILD when their oxides are not part of the active Perple_X component list. The runner prints and writes an `oxide_omissions.txt` warning whenever a nonzero omitted oxide is detected. The generated composition JSON also contains `omitted_oxides_from_default_build`, and the export manifest repeats the omitted oxide list.
+TiO2, K2O, and P2O5 remain in the JSON composition records, but with the default stx21 profile they are source-only oxides. They are useful for provenance and plotting, but they are omitted from BUILD because they are not part of this stx21 component list. The runner prints and writes an `oxide_omissions.txt` warning whenever a nonzero source-only oxide is detected. The generated composition JSON also contains `omitted_oxides_from_build` and the backward-compatible `omitted_oxides_from_default_build`; the export manifest repeats the omitted oxide list.
 
-This matters scientifically: the near-side/maria proxy is Ti-rich in the source table, but the default `stx21` setup does not pass TiO2 to BUILD. Any near-side versus far-side comparison that depends on Ti-bearing phases is therefore incomplete.
+This matters scientifically: the near-side/maria proxy is Ti-rich in the source table, but the default `stx21` setup does not pass TiO2 to BUILD. Any near-side versus far-side comparison that depends on Ti-bearing phases is therefore incomplete. The workbench also provides an `hp633` profile using `hp633ver.dat` and `solution_model.dat`; it passes `TiO2` and `K2O` to BUILD, while `P2O5` remains source-only because the default `hp633ver.dat` component block does not declare P2O5. Switching profiles is a thermodynamic-model change, not just a plotting option; the database, solution model file, BUILD prompts, phases, and validation assumptions must be reviewed together.
 
 ## Current Thermodynamic Caveat
 
@@ -84,6 +84,8 @@ This exclusion keeps the PlanetProfile-facing smoke-test tables finite. It is a 
 - Lunar surface maria/highlands oxide table: https://en.wikipedia.org/wiki/Geology_of_the_Moon#Elemental_composition
 - Lu et al. (2020), "Seamless maps of major elements of the Moon": https://arxiv.org/abs/2007.15858
 - Sossi et al. (2024), "Composition, Structure and Origin of the Moon": https://arxiv.org/abs/2408.16840
+- Perple_X upstream repository and datafiles: https://github.com/jadconnolly/Perple_X
+- Default stx21 thermodynamic datafile: https://raw.githubusercontent.com/jadconnolly/Perple_X/main/datafiles/stx21ver.dat
 
 ## Refinement Path
 

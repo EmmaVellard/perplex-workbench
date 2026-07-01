@@ -15,6 +15,12 @@ from perplex_workbench.core.database_utils import (
 )
 
 
+DEFAULT_BUILD_TEMPLATES = {
+    "stx21": "build_inputs/lunar_stx21_template.build.in",
+    "hp633": "build_inputs/lunar_hp633_template.build.in",
+}
+
+
 def show_database_selector(config: dict[str, Any], config_path: Path) -> str:
     """Render database selector and return selected database name.
 
@@ -56,6 +62,8 @@ def show_database_selector(config: dict[str, Any], config_path: Path) -> str:
     if selected != current_db:
         if st.button(f"💾 Switch to {selected} database", type="primary"):
             config["database"] = selected
+            if selected in DEFAULT_BUILD_TEMPLATES:
+                config["build_template_file"] = DEFAULT_BUILD_TEMPLATES[selected]
             save_config_json(config_path, config)
             st.success(f"✅ Database changed to {selected}. The new database will be used for all future calculations.")
             st.info("Existing models in your config remain unchanged. Their compositions may need adjustment if switching databases.")
@@ -89,9 +97,10 @@ def database_selector_help_text() -> str:
   - Modeled oxides: Na2O, MgO, Al2O3, SiO2, CaO, FeO (6 components)
   - Best for typical mantle mineralogy
 
-- **hp633**: Extended database including Ti, K, P
-  - Modeled oxides: All 9 major oxides including TiO2, K2O, P2O5
-  - Use when these elements are significant in your composition
+- **hp633**: Holland & Powell 2011 setup
+  - Modeled oxides: Na2O, MgO, Al2O3, SiO2, K2O, CaO, TiO2, FeO
+  - P2O5 is still source-only unless you provide a P-bearing database/template
+  - Use when TiO2 or K2O need to be passed to BUILD
 
 The database choice affects which oxides are included in Perple_X BUILD calculations.
 """

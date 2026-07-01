@@ -153,7 +153,7 @@ def write_composition_plot(models: list[PlotModel], output_path: Path) -> None:
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#ffffff"/>',
         svg_text(width / 2, 34, "Normalized lunar proxy oxide compositions", 22, "middle", "bold"),
-        svg_text(width / 2, 56, "Full composition record; TiO2, K2O, and P2O5 are not active in stx21 BUILD", 13, "middle"),
+        svg_text(width / 2, 56, "Full source record; TiO2, K2O, and P2O5 are source-only in default stx21 BUILD", 13, "middle"),
     ]
 
     for tick in range(6):

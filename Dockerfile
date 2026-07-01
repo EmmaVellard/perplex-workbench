@@ -46,7 +46,7 @@ EXPOSE 8501
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8501/_stcore/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=5).read()" || exit 1
 
 # Default command: launch GUI
-CMD ["perplex-gui", "--server.address", "0.0.0.0"]
+CMD ["perplex-gui", "--address", "0.0.0.0"]

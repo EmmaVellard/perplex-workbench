@@ -9,13 +9,20 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from perplex_workbench.core.config import DATABASES
+from perplex_workbench.core.database_utils import get_database_components, get_source_only_oxides
 from planetprofile_tables import write_planetprofile_native_table
 from validate_tab import column_indices, read_tab, validate_project_output
 
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG = BASE_DIR / "configs" / "models.json"
+DEFAULT_DATABASE = "stx21"
 DEFAULT_BUILD_TEMPLATE = BASE_DIR / "build_inputs" / "lunar_stx21_template.build.in"
+DEFAULT_BUILD_TEMPLATES = {
+    "stx21": DEFAULT_BUILD_TEMPLATE,
+    "hp633": BASE_DIR / "build_inputs" / "lunar_hp633_template.build.in",
+}
 
 PERPLEX_OPTION_TEXT = """\
 warn_interactive F
@@ -73,6 +80,17 @@ PERPLEX_COMPONENTS = (
     ("FeO", "FEO"),
 )
 ACTIVE_COMPOSITION_OXIDES = {oxide for oxide, _ in PERPLEX_COMPONENTS}
+OXIDE_COMPONENT_NAMES = {
+    "Na2O": "NA2O",
+    "MgO": "MGO",
+    "Al2O3": "AL2O3",
+    "SiO2": "SIO2",
+    "CaO": "CAO",
+    "FeO": "FEO",
+    "TiO2": "TIO2",
+    "K2O": "K2O",
+    "P2O5": "P2O5",
+}
 OMITTED_OXIDE_THRESHOLD = 1.0e-12
 DEFAULT_BUILD_DATABASE_FILE = "stx21ver.dat"
 DEFAULT_BUILD_SOLUTION_MODEL_FILE = "stx21_solution_model.dat"
@@ -88,6 +106,29 @@ class PipelineError(RuntimeError):
     pass
 
 
+def resolve_database_name(database: str | None) -> str:
+    name = database or DEFAULT_DATABASE
+    if name not in DATABASES:
+        available = ", ".join(sorted(DATABASES))
+        raise ValueError(f"Unknown thermodynamic database '{name}'. Available: {available}")
+    return name
+
+
+def default_build_template_for_database(database: str) -> Path:
+    name = resolve_database_name(database)
+    try:
+        return DEFAULT_BUILD_TEMPLATES[name]
+    except KeyError as exc:
+        raise ValueError(f"No default BUILD template is configured for database '{name}'.") from exc
+
+
+def is_stx21_default_template(path: Path) -> bool:
+    try:
+        return path.resolve() == DEFAULT_BUILD_TEMPLATE.resolve()
+    except FileNotFoundError:
+        return path == DEFAULT_BUILD_TEMPLATE
+
+
 @dataclass(frozen=True)
 class ModelConfig:
     project: str
@@ -95,6 +136,7 @@ class ModelConfig:
     build_input_file: Path
     output_dir: Path
     work_dir: Path
+    database: str = DEFAULT_DATABASE
     planetprofile_filename: str | None = None
     scientific_status: str | None = None
     model_scope: str | None = None
@@ -106,6 +148,7 @@ class ModelConfig:
 @dataclass(frozen=True)
 class PipelineConfig:
     perplex_dir: Path
+    database: str
     models: list[ModelConfig]
 
 
@@ -131,7 +174,12 @@ def werami_sequence_from_config(model: dict) -> tuple[str, ...]:
     return tuple(str(item) for item in sequence)
 
 
-def load_config(config_path: Path) -> PipelineConfig:
+def load_config(
+    config_path: Path,
+    *,
+    database_override: str | None = None,
+    perplex_dir_override: str | Path | None = None,
+) -> PipelineConfig:
     base_dir = config_base_dir(config_path)
     if not config_path.exists():
         raise FileNotFoundError(
@@ -139,11 +187,23 @@ def load_config(config_path: Path) -> PipelineConfig:
             "and set perplex_dir to your local Perple_X install."
         )
     data = json.loads(config_path.read_text(encoding="utf-8"))
-    default_build_input = resolve_path(data.get("build_template_file", DEFAULT_BUILD_TEMPLATE), base_dir)
+    pipeline_database = resolve_database_name(database_override or data.get("database", DEFAULT_DATABASE))
+    configured_build_template = data.get("build_template_file")
     models: list[ModelConfig] = []
 
     for model in data["models"]:
         project = model["project"]
+        model_database = resolve_database_name(model.get("database", pipeline_database))
+        if "build_input_file" in model:
+            build_input_file = resolve_path(model["build_input_file"], base_dir)
+        elif configured_build_template:
+            configured_template = resolve_path(configured_build_template, base_dir)
+            if model_database != "stx21" and is_stx21_default_template(configured_template):
+                build_input_file = default_build_template_for_database(model_database)
+            else:
+                build_input_file = configured_template
+        else:
+            build_input_file = default_build_template_for_database(model_database)
         output_dir = resolve_path(model.get("output_dir", f"outputs/{project}"), base_dir)
         work_dir = (
             resolve_path(model["work_dir"], base_dir)
@@ -157,12 +217,10 @@ def load_config(config_path: Path) -> PipelineConfig:
                     model.get("composition_file", f"compositions/{project}.json"),
                     base_dir,
                 ),
-                build_input_file=resolve_path(
-                    model.get("build_input_file", default_build_input),
-                    base_dir,
-                ),
+                build_input_file=build_input_file,
                 output_dir=output_dir,
                 work_dir=work_dir,
+                database=model_database,
                 planetprofile_filename=model.get("planetprofile_filename"),
                 scientific_status=model.get("scientific_status"),
                 model_scope=model.get("model_scope"),
@@ -173,16 +231,23 @@ def load_config(config_path: Path) -> PipelineConfig:
         )
 
     return PipelineConfig(
-        perplex_dir=resolve_path(data["perplex_dir"], base_dir),
+        perplex_dir=resolve_path(perplex_dir_override or data["perplex_dir"], base_dir),
+        database=pipeline_database,
         models=models,
     )
 
 
 def executable_path(perplex_dir: Path, name: str) -> Path:
-    bin_path = perplex_dir / "bin" / name
-    if bin_path.exists():
-        return bin_path
-    return perplex_dir / name
+    candidates = [
+        perplex_dir / "bin" / name,
+        perplex_dir / "bin" / f"{name}.exe",
+        perplex_dir / name,
+        perplex_dir / f"{name}.exe",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def ensure_executable(path: Path, label: str) -> None:
@@ -190,8 +255,25 @@ def ensure_executable(path: Path, label: str) -> None:
         raise FileNotFoundError(f"Missing {label} executable: {path}")
     if not path.is_file():
         raise FileNotFoundError(f"{label} executable is not a file: {path}")
-    if not os.access(path, os.X_OK):
+    if is_python_script(path):
+        return
+    if os.name != "nt" and not os.access(path, os.X_OK):
         raise PermissionError(f"{label} executable is not executable: {path}")
+
+
+def is_python_script(path: Path) -> bool:
+    try:
+        with path.open("rb") as handle:
+            first_line = handle.readline(200).decode("utf-8", errors="ignore")
+    except OSError:
+        return False
+    return first_line.startswith("#!") and "python" in first_line.lower()
+
+
+def executable_command(path: Path) -> list[str]:
+    if is_python_script(path):
+        return [sys.executable, str(path)]
+    return [str(path)]
 
 
 def write_log(log_path: Path, stdout: str, stderr: str, returncode: int, stdin_text: str) -> None:
@@ -210,7 +292,7 @@ def write_log(log_path: Path, stdout: str, stderr: str, returncode: int, stdin_t
 def run_command(executable: Path, stdin_text: str, cwd: Path, log_path: Path, label: str) -> None:
     ensure_executable(executable, label)
     result = subprocess.run(
-        [str(executable)],
+        executable_command(executable),
         input=stdin_text,
         text=True,
         cwd=str(cwd),
@@ -273,27 +355,43 @@ def composition_oxide_order(data: dict, composition: dict[str, float]) -> list[s
     return ordered
 
 
-def omitted_composition_oxides(composition_file: Path) -> list[tuple[str, float]]:
+def active_components_for_database(database: str = DEFAULT_DATABASE) -> tuple[tuple[str, str], ...]:
+    return get_database_components(resolve_database_name(database))
+
+
+def active_component_oxides(database: str = DEFAULT_DATABASE) -> set[str]:
+    return {oxide for oxide, _ in active_components_for_database(database)}
+
+
+def omitted_composition_oxides(
+    composition_file: Path,
+    database: str = DEFAULT_DATABASE,
+) -> list[tuple[str, float]]:
     data, composition = load_normalized_composition(composition_file)
+    active_oxides = active_component_oxides(database)
     omitted: list[tuple[str, float]] = []
     for oxide in composition_oxide_order(data, composition):
         value = composition[oxide]
-        if oxide not in ACTIVE_COMPOSITION_OXIDES and abs(value) > OMITTED_OXIDE_THRESHOLD:
+        if oxide not in active_oxides and abs(value) > OMITTED_OXIDE_THRESHOLD:
             omitted.append((oxide, value))
     return omitted
 
 
-def omitted_oxide_records(composition_file: Path) -> list[dict[str, float | str]]:
+def omitted_oxide_records(
+    composition_file: Path,
+    database: str = DEFAULT_DATABASE,
+) -> list[dict[str, float | str]]:
     data, composition = load_normalized_composition(composition_file)
+    active_oxides = active_component_oxides(database)
     records: list[dict[str, float | str]] = []
     raw = data.get("composition_raw", {})
     for oxide in composition_oxide_order(data, composition):
         value = composition[oxide]
-        if oxide not in ACTIVE_COMPOSITION_OXIDES and abs(value) > OMITTED_OXIDE_THRESHOLD:
+        if oxide not in active_oxides and abs(value) > OMITTED_OXIDE_THRESHOLD:
             record: dict[str, float | str] = {
                 "oxide": oxide,
                 "normalized_wt_percent": value,
-                "reason": "not_in_active_perplex_component_list",
+                "reason": f"not_in_{resolve_database_name(database)}_active_component_list",
             }
             if isinstance(raw, dict) and oxide in raw:
                 try:
@@ -304,22 +402,26 @@ def omitted_oxide_records(composition_file: Path) -> list[dict[str, float | str]
     return records
 
 
-def omitted_oxide_warning(composition_file: Path) -> str | None:
-    omitted = omitted_composition_oxides(composition_file)
+def omitted_oxide_warning(
+    composition_file: Path,
+    database: str = DEFAULT_DATABASE,
+) -> str | None:
+    omitted = omitted_composition_oxides(composition_file, database=database)
     if not omitted:
         return None
 
-    active_components = ", ".join(component for _, component in PERPLEX_COMPONENTS)
+    active_components = ", ".join(component for _, component in active_components_for_database(database))
     omitted_text = ", ".join(f"{oxide}={value:.8f} wt%" for oxide, value in omitted)
     return (
         f"WARNING: {composition_file.name} contains oxide(s) omitted from Perple_X BUILD "
-        f"because the active component list is {active_components}: {omitted_text}"
+        f"because the {resolve_database_name(database)} active component list is {active_components}: "
+        f"{omitted_text}"
     )
 
 
 def warn_omitted_oxides(model: ModelConfig) -> None:
     try:
-        warning = omitted_oxide_warning(model.composition_file)
+        warning = omitted_oxide_warning(model.composition_file, database=model.database)
     except PipelineError as exc:
         print(f"WARNING: Could not inspect omitted oxides for {model.project}: {exc}", file=sys.stderr)
         return
@@ -332,39 +434,183 @@ def warn_omitted_oxides(model: ModelConfig) -> None:
     warning_path.write_text(warning + "\n")
 
 
-def composition_bulk_values(composition_file: Path) -> str:
+def composition_bulk_values(
+    composition_file: Path,
+    database: str = DEFAULT_DATABASE,
+) -> str:
     _, composition = load_normalized_composition(composition_file)
-    missing = [oxide for oxide, _ in PERPLEX_COMPONENTS if oxide not in composition]
+    components = active_components_for_database(database)
+    missing = [oxide for oxide, _ in components if oxide not in composition]
     if missing:
         raise PipelineError(
             f"Composition file is missing oxide(s) needed for BUILD: {', '.join(missing)}"
         )
 
     values: list[str] = []
-    for oxide, _ in PERPLEX_COMPONENTS:
+    for oxide, _ in components:
         values.append(f"{composition[oxide]:.8f}")
     return " ".join(values)
 
 
-def active_component_records() -> list[dict[str, str]]:
+def active_component_records(database: str = DEFAULT_DATABASE) -> list[dict[str, str]]:
     return [
         {"oxide": oxide, "component": component}
-        for oxide, component in PERPLEX_COMPONENTS
+        for oxide, component in active_components_for_database(database)
     ]
 
 
+def database_path(perplex_dir: Path, database: str = DEFAULT_DATABASE) -> Path:
+    db = DATABASES[resolve_database_name(database)]
+    return perplex_dir / "datafiles" / db.database_file
+
+
+def solution_model_path(perplex_dir: Path, database: str = DEFAULT_DATABASE) -> Path:
+    db = DATABASES[resolve_database_name(database)]
+    return perplex_dir / "datafiles" / db.solution_model_file
+
+
+def default_database_path(perplex_dir: Path) -> Path:
+    return database_path(perplex_dir, DEFAULT_DATABASE)
+
+
+def default_solution_model_path(perplex_dir: Path) -> Path:
+    return solution_model_path(perplex_dir, DEFAULT_DATABASE)
+
+
+def parse_perplex_components(database_text: str) -> list[str]:
+    lower = database_text.lower()
+    start = lower.find("begin_components")
+    end = lower.find("end_components", start)
+    if start < 0 or end < 0:
+        raise PipelineError("Thermodynamic data file does not contain a begin_components/end_components block.")
+
+    block = database_text[start + len("begin_components"):end]
+    tokens = block.replace("|", " ").replace(",", " ").split()
+    components: list[str] = []
+    index = 0
+    while index < len(tokens) - 1:
+        name = tokens[index]
+        value = tokens[index + 1].replace("D", "E").replace("d", "e")
+        try:
+            float(value)
+        except ValueError:
+            index += 1
+            continue
+        if any(character.isalpha() for character in name):
+            components.append(name)
+        index += 2
+    if not components:
+        raise PipelineError("No components were parsed from the thermodynamic data file.")
+    return components
+
+
+def read_perplex_database_components(database_file: Path) -> list[str]:
+    if not database_file.exists():
+        raise FileNotFoundError(f"Missing Perple_X thermodynamic data file: {database_file}")
+    return parse_perplex_components(database_file.read_text(encoding="utf-8", errors="replace"))
+
+
+def default_template_database(path: Path) -> str | None:
+    for database, template in DEFAULT_BUILD_TEMPLATES.items():
+        try:
+            if path.resolve() == template.resolve():
+                return database
+        except FileNotFoundError:
+            if path == template:
+                return database
+    return None
+
+
+def is_default_build_template(model: ModelConfig) -> bool:
+    try:
+        return model.build_input_file.resolve() == default_build_template_for_database(model.database).resolve()
+    except FileNotFoundError:
+        return model.build_input_file == default_build_template_for_database(model.database)
+
+
+def default_component_status(
+    perplex_dir: Path,
+    database: str = DEFAULT_DATABASE,
+) -> list[dict[str, bool | str]]:
+    database = resolve_database_name(database)
+    declared_components = {
+        component.upper()
+        for component in read_perplex_database_components(database_path(perplex_dir, database))
+    }
+    active_components = {component.upper() for _, component in active_components_for_database(database)}
+    return [
+        {
+            "oxide": oxide,
+            "component": component,
+            "declared_in_database": component.upper() in declared_components,
+            "declared_in_default_database": component.upper() in declared_components,
+            "passed_by_build": component.upper() in active_components,
+            "passed_by_default_build": component.upper() in active_components,
+        }
+        for oxide, component in OXIDE_COMPONENT_NAMES.items()
+    ]
+
+
+def validate_thermodynamic_setup(perplex_dir: Path, model: ModelConfig) -> None:
+    template_database = default_template_database(model.build_input_file)
+    if template_database and template_database != model.database:
+        raise PipelineError(
+            f"BUILD template {model.build_input_file.name} is for '{template_database}', "
+            f"but model '{model.project}' is configured for '{model.database}'."
+        )
+
+    if not is_default_build_template(model):
+        return
+
+    database_file = database_path(perplex_dir, model.database)
+    solution_model_file = solution_model_path(perplex_dir, model.database)
+    declared_components = {
+        component.upper()
+        for component in read_perplex_database_components(database_file)
+    }
+    required_components = [component for _, component in active_components_for_database(model.database)]
+    missing_components = [
+        component
+        for component in required_components
+        if component.upper() not in declared_components
+    ]
+    if missing_components:
+        raise PipelineError(
+            f"{model.database} BUILD template requires component(s) not declared in {database_file.name}: "
+            f"{', '.join(missing_components)}"
+        )
+    if not solution_model_file.exists():
+        raise FileNotFoundError(f"Missing Perple_X solution model file: {solution_model_file}")
+
+
+def validate_default_thermodynamic_setup(perplex_dir: Path, model: ModelConfig) -> None:
+    validate_thermodynamic_setup(perplex_dir, model)
+
+
 def build_template_provenance(perplex_dir: Path, model: ModelConfig) -> dict:
+    try:
+        database_components = read_perplex_database_components(database_path(perplex_dir, model.database))
+    except (FileNotFoundError, PipelineError):
+        database_components = []
+
+    db = DATABASES[model.database]
+    source_only = get_source_only_oxides(model.database)
     return {
+        "database_name": model.database,
         "build_template": str(model.build_input_file),
-        "active_perplex_components": active_component_records(),
-        "database_file": str(perplex_dir / "datafiles" / DEFAULT_BUILD_DATABASE_FILE),
-        "solution_model_file": str(perplex_dir / "datafiles" / DEFAULT_BUILD_SOLUTION_MODEL_FILE),
-        "p_t_range": DEFAULT_BUILD_PT_RANGE,
-        "excluded_phases": list(DEFAULT_BUILD_EXCLUDED_PHASES),
-        "solution_models": list(DEFAULT_BUILD_SOLUTION_MODELS),
+        "active_perplex_components": active_component_records(model.database),
+        "source_only_oxides": list(source_only),
+        "database_file": str(database_path(perplex_dir, model.database)),
+        "solution_model_file": str(solution_model_path(perplex_dir, model.database)),
+        "database_declared_components": database_components,
+        "p_t_range": db.pt_range,
+        "excluded_phases": list(db.excluded_phases),
+        "solution_models": list(db.solution_models),
         "provenance_note": (
-            "These fields describe the default lunar_stx21_template.build.in assumptions. "
-            "If a custom build_input_file is supplied, verify that these assumptions still apply."
+            f"These fields describe the '{model.database}' thermodynamic profile used by this model. "
+            f"Source-only oxides for this profile: {', '.join(source_only) if source_only else 'none'}. "
+            "If a custom build_input_file is supplied, verify that the template, bulk-value order, "
+            "database, solution model file, and phase choices agree."
         ),
     }
 
@@ -391,7 +637,10 @@ def render_build_input(perplex_dir: Path, model: ModelConfig) -> str:
         "${BUILD_TITLE}": build_title,
     }
     if "${PERPLEX_BULK_VALUES}" in text:
-        replacements["${PERPLEX_BULK_VALUES}"] = composition_bulk_values(model.composition_file)
+        replacements["${PERPLEX_BULK_VALUES}"] = composition_bulk_values(
+            model.composition_file,
+            database=model.database,
+        )
     for placeholder, value in replacements.items():
         text = text.replace(placeholder, value)
     return text
@@ -497,9 +746,10 @@ def write_planetprofile_tab(source_tab: Path, destination_tab: Path) -> None:
             )
 
 
-def run_model(perplex_dir: Path, model: ModelConfig) -> None:
+def run_model(perplex_dir: Path, model: ModelConfig, *, skip_validation: bool = False) -> None:
     model.output_dir.mkdir(parents=True, exist_ok=True)
     model.work_dir.mkdir(parents=True, exist_ok=True)
+    validate_thermodynamic_setup(perplex_dir, model)
     if not model.composition_file.exists():
         print(f"WARNING: composition file not found for {model.project}: {model.composition_file}")
     else:
@@ -520,6 +770,10 @@ def run_model(perplex_dir: Path, model: ModelConfig) -> None:
         validation_report_path.write_text(f"STATUS: FAIL\nError: {str(e)}\n")
         raise
 
+    if skip_validation:
+        print(f"Validation skipped for {model.project}; technical output exists at {tab_path}")
+        return
+
     result = validate_project_output(model.project, model.output_dir, tab_path=tab_path)
     print(result.report_path.read_text())
     if not result.passed:
@@ -534,6 +788,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run local Perple_X BUILD/VERTEX/WERAMI pipeline.")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Path to configs/models.json.")
     parser.add_argument("--project", help="Run only one project from the config.")
+    parser.add_argument(
+        "--database",
+        choices=sorted(DATABASES),
+        help="Thermodynamic database profile to use instead of the config value.",
+    )
+    parser.add_argument(
+        "--perplex-dir",
+        help="Path to a Perple_X installation, overriding configs/models.json.",
+    )
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Run BUILD/VERTEX/WERAMI but skip output validation.",
+    )
     return parser.parse_args(argv)
 
 
@@ -542,7 +810,11 @@ def main(argv: list[str] | None = None) -> int:
     config_path = resolve_path(args.config, BASE_DIR)
 
     try:
-        config = load_config(config_path)
+        config = load_config(
+            config_path,
+            database_override=args.database,
+            perplex_dir_override=args.perplex_dir,
+        )
         require_perplex_dir(config.perplex_dir)
 
         selected = [model for model in config.models if not args.project or model.project == args.project]
@@ -550,7 +822,7 @@ def main(argv: list[str] | None = None) -> int:
             raise PipelineError(f"Project not found in config: {args.project}")
 
         for model in selected:
-            run_model(config.perplex_dir, model)
+            run_model(config.perplex_dir, model, skip_validation=args.skip_validation)
     except (
         FileNotFoundError,
         PermissionError,

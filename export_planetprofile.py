@@ -85,11 +85,11 @@ def metadata_value(model: run_perplex.ModelConfig, composition: dict, key: str, 
 
 
 def omitted_oxide_manifest_records(model: run_perplex.ModelConfig, composition: dict) -> list[dict]:
-    records = composition.get("omitted_oxides_from_default_build")
+    records = composition.get("omitted_oxides_from_build") or composition.get("omitted_oxides_from_default_build")
     if isinstance(records, list):
         return [record for record in records if isinstance(record, dict)]
     try:
-        return run_perplex.omitted_oxide_records(model.composition_file)
+        return run_perplex.omitted_oxide_records(model.composition_file, database=model.database)
     except (FileNotFoundError, run_perplex.PipelineError, json.JSONDecodeError):
         return []
 
@@ -125,7 +125,8 @@ def table_manifest_record(table: ExportedTable, config: run_perplex.PipelineConf
             "No composition interpretation was provided.",
         ),
         "source_note": str(composition.get("source_note", "")),
-        "active_perplex_components": run_perplex.active_component_records(),
+        "database_name": model.database,
+        "active_perplex_components": run_perplex.active_component_records(model.database),
         "omitted_oxides": omitted_oxide_manifest_records(model, composition),
         "build_template_used": str(model.build_input_file),
         "perplex_dir": str(config.perplex_dir),
@@ -174,6 +175,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--config", default=str(run_perplex.DEFAULT_CONFIG), help="Path to configs/models.json.")
     parser.add_argument("--project", help="Export only one project from the config.")
     parser.add_argument(
+        "--database",
+        choices=sorted(run_perplex.DATABASES),
+        help="Thermodynamic database profile to use instead of the config value.",
+    )
+    parser.add_argument(
+        "--perplex-dir",
+        help="Path to a Perple_X installation, overriding configs/models.json.",
+    )
+    parser.add_argument(
         "--planetprofile-export-dir",
         default=str(DEFAULT_EXPORT_DIR),
         help="Directory where PlanetProfile-format .tab files will be copied.",
@@ -186,7 +196,11 @@ def main(argv: list[str] | None = None) -> int:
     config_path = run_perplex.resolve_path(args.config, run_perplex.BASE_DIR)
 
     try:
-        config = run_perplex.load_config(config_path)
+        config = run_perplex.load_config(
+            config_path,
+            database_override=args.database,
+            perplex_dir_override=args.perplex_dir,
+        )
         base_dir = run_perplex.config_base_dir(config_path)
         export_dir = run_perplex.resolve_path(args.planetprofile_export_dir, base_dir)
         exported = export_tables(config, select_models(config, args.project), export_dir)

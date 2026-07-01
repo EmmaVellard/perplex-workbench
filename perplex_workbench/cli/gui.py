@@ -30,6 +30,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Port to run server on (default: 8501)",
     )
     parser.add_argument(
+        "--address",
+        "--host",
+        default="127.0.0.1",
+        help="Host/interface to bind Streamlit to (default: 127.0.0.1)",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -43,7 +49,15 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        cmd = ["streamlit", "run", str(gui_script), "--server.port", str(args.port)]
+        cmd = [
+            "streamlit",
+            "run",
+            str(gui_script),
+            "--server.address",
+            str(args.address),
+            "--server.port",
+            str(args.port),
+        ]
         subprocess.run(cmd, check=True)
         return 0
     except subprocess.CalledProcessError as e:

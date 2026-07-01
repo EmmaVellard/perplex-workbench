@@ -5,13 +5,13 @@ from typing import Any
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import make_compositions
 import run_perplex
 
 from perplex_workbench.core.database_utils import (
     get_active_oxides,
-    get_database_components,
     get_source_only_oxides,
 )
 
@@ -98,14 +98,20 @@ def normalized_model_composition(model: dict[str, Any]) -> dict[str, float]:
     return normalize_composition(composition_from_model(model))
 
 
-def omitted_oxides_for_composition(composition: dict[str, float]) -> list[dict[str, float | str]]:
+def omitted_oxides_for_composition(
+    composition: dict[str, float],
+    database: str = "stx21",
+) -> list[dict[str, float | str]]:
     raw = make_compositions.ordered_composition(composition)
     normalized = normalize_composition(raw)
-    return make_compositions.omitted_oxides_from_default_build(raw, normalized)
+    return make_compositions.omitted_oxides_from_default_build(raw, normalized, database=database)
 
 
-def omitted_oxides_for_model(model: dict[str, Any]) -> list[dict[str, float | str]]:
-    return omitted_oxides_for_composition(composition_from_model(model))
+def omitted_oxides_for_model(
+    model: dict[str, Any],
+    database: str = "stx21",
+) -> list[dict[str, float | str]]:
+    return omitted_oxides_for_composition(composition_from_model(model), database=database)
 
 
 def oxide_table_rows(model: dict[str, Any], database: str = "stx21") -> list[dict[str, Any]]:
@@ -120,7 +126,7 @@ def oxide_table_rows(model: dict[str, Any], database: str = "stx21") -> list[dic
     """
     raw = composition_from_model(model)
     normalized = normalize_composition(raw)
-    omitted = {item["oxide"] for item in omitted_oxides_for_composition(raw)}
+    omitted = {item["oxide"] for item in omitted_oxides_for_composition(raw, database=database)}
     active_oxides = get_active_oxides(database)
 
     return [
@@ -188,7 +194,7 @@ def scientific_guardrail_text(model: dict[str, Any], database: str = "stx21") ->
     Returns:
         Formatted guardrail text
     """
-    omitted = omitted_oxides_for_model(model)
+    omitted = omitted_oxides_for_model(model, database=database)
     omitted_names = ", ".join(str(item["oxide"]) for item in omitted) or "none"
     source_only = get_source_only_oxides(database)
 

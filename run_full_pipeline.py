@@ -15,6 +15,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--config", default=str(run_perplex.DEFAULT_CONFIG), help="Path to configs/models.json.")
     parser.add_argument("--project", help="Run only one project from the config.")
     parser.add_argument(
+        "--database",
+        choices=sorted(run_perplex.DATABASES),
+        help="Thermodynamic database profile to use instead of the config value.",
+    )
+    parser.add_argument(
+        "--perplex-dir",
+        help="Path to a Perple_X installation, overriding configs/models.json.",
+    )
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Run BUILD/VERTEX/WERAMI but skip output validation.",
+    )
+    parser.add_argument(
         "--skip-compositions",
         action="store_true",
         help="Skip regenerating composition files before running Perple_X.",
@@ -45,12 +59,20 @@ def main(argv: list[str] | None = None) -> int:
         composition_args = ["--config", args.config]
         if args.project:
             composition_args.extend(["--project", args.project])
+        if args.database:
+            composition_args.extend(["--database", args.database])
         make_compositions.main(composition_args)
 
     print("Running Perple_X pipeline")
     run_args = ["--config", args.config]
     if args.project:
         run_args.extend(["--project", args.project])
+    if args.database:
+        run_args.extend(["--database", args.database])
+    if args.perplex_dir:
+        run_args.extend(["--perplex-dir", args.perplex_dir])
+    if args.skip_validation:
+        run_args.append("--skip-validation")
 
     result = run_perplex.main(run_args)
     if result != 0:
@@ -75,6 +97,10 @@ def main(argv: list[str] | None = None) -> int:
         ]
         if args.project:
             export_args.extend(["--project", args.project])
+        if args.database:
+            export_args.extend(["--database", args.database])
+        if args.perplex_dir:
+            export_args.extend(["--perplex-dir", args.perplex_dir])
         return export_planetprofile.main(export_args)
 
     return 0

@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from perplex_workbench.cli.common import create_base_parser, setup_cli_environment, handle_cli_error
+from perplex_workbench.cli.common import create_base_parser, handle_cli_error
 import run_perplex
 
 
@@ -41,13 +41,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        config, logger = setup_cli_environment(args)
+        original_args = ["--config", str(args.config or run_perplex.DEFAULT_CONFIG)]
 
-        # Call original run_perplex.main with translated arguments
-        original_args = ["--config", str(config.to_dict())]
-
-        if hasattr(args, "project") and args.project:
+        if args.project:
             original_args.extend(["--project", args.project])
+
+        if args.database:
+            original_args.extend(["--database", args.database])
+
+        if args.perplex_dir:
+            original_args.extend(["--perplex-dir", str(args.perplex_dir)])
 
         if args.skip_validation:
             original_args.append("--skip-validation")

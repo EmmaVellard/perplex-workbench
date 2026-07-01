@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import export_planetprofile
 import make_compositions
@@ -58,6 +58,35 @@ def make_fake_perplex(
     perplex_dir = tmp_path / "fake_perplex"
     bin_dir = perplex_dir / "bin"
     bin_dir.mkdir(parents=True)
+    datafiles_dir = perplex_dir / "datafiles"
+    datafiles_dir.mkdir()
+    (datafiles_dir / "stx21ver.dat").write_text(
+        "begin_components\n"
+        "NA2O 61.9790\n"
+        "MGO 40.3040\n"
+        "AL2O3 101.9610\n"
+        "SIO2 60.0840\n"
+        "CAO 56.0770\n"
+        "FEO 71.8440\n"
+        "O2 31.9990\n"
+        "end_components\n"
+    )
+    (datafiles_dir / "stx21_solution_model.dat").write_text("O\nOpx\nCpx\n")
+    (datafiles_dir / "hp633ver.dat").write_text(
+        "begin_components\n"
+        "Na2O 61.9790\n"
+        "MgO 40.3040\n"
+        "Al2O3 101.9610\n"
+        "SiO2 60.0840\n"
+        "K2O 94.1960\n"
+        "CaO 56.0770\n"
+        "TiO2 79.8660\n"
+        "FeO 71.8440\n"
+        "end_components\n"
+    )
+    (datafiles_dir / "solution_model.dat").write_text(
+        "O(HP)\nOpx(HP)\nCpx(HP)\nGt(HP)\nSp(HP)\nPl(I1,HP)\nIlm(WPH)\n"
+    )
 
     if omit != "build":
         write_executable(
@@ -252,9 +281,13 @@ def test_generated_composition_records_scientific_and_omission_metadata(tmp_path
     assert data["model_scope"] == "surface_terrane_proxy"
     assert data["planetprofile_readiness"] == "mechanically_exportable_not_scientifically_final"
     assert "not a final Ti-bearing mantle EOS" in data["composition_interpretation"]
+    assert data["default_perplex_build"]["source_only_oxides"] == ["TiO2", "K2O", "P2O5"]
+    assert data["default_perplex_build"]["bulk_values_order"] == ["NA2O", "MGO", "AL2O3", "SIO2", "CAO", "FEO"]
     omitted = data["omitted_oxides_from_default_build"]
     assert omitted[0]["oxide"] == "TiO2"
     assert math.isclose(omitted[0]["normalized_wt_percent"], 3.90390390, rel_tol=0, abs_tol=1e-8)
+    bulk_values = (tmp_path / f"{NEAR_PROJECT}_bulk_values.txt").read_text().strip()
+    assert bulk_values == "0.60060060 9.20920921 14.91491491 45.44544545 11.81181181 14.11411411"
 
 
 def test_render_build_input_expands_bulk_values_from_composition(tmp_path: Path) -> None:
@@ -306,6 +339,123 @@ def test_default_werami_input_sequence_is_backwards_compatible(tmp_path: Path) -
     assert run_perplex.werami_input_text(model) == (
         f"{PROJECT}\n2\n38\n1\n2\n13\n14\n3\n4\n10\n11\n0\nn\n1\n0\n"
     )
+
+
+def test_parse_perplex_database_components_from_stx_style_header() -> None:
+    text = (
+        "title | comment begin_components | < 6 chars, molar weight "
+        "NA2O 61.9790 MGO 40.3040 AL2O3 101.9610 SIO2 60.0840 "
+        "CAO 56.0770 FEO 71.8440 O2 31.9990 end_components | tail"
+    )
+
+    components = run_perplex.parse_perplex_components(text)
+
+    assert components == ["NA2O", "MGO", "AL2O3", "SIO2", "CAO", "FEO", "O2"]
+
+
+def test_default_component_status_marks_ti_k_p_as_not_declared(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path)
+
+    rows = run_perplex.default_component_status(perplex_dir)
+    by_oxide = {row["oxide"]: row for row in rows}
+
+    assert by_oxide["SiO2"]["declared_in_default_database"] is True
+    assert by_oxide["SiO2"]["passed_by_default_build"] is True
+    assert by_oxide["TiO2"]["declared_in_default_database"] is False
+    assert by_oxide["K2O"]["passed_by_default_build"] is False
+    assert by_oxide["P2O5"]["declared_in_default_database"] is False
+
+
+def test_hp633_component_status_models_ti_and_k_but_not_p(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path)
+
+    rows = run_perplex.default_component_status(perplex_dir, database="hp633")
+    by_oxide = {row["oxide"]: row for row in rows}
+
+    assert by_oxide["TiO2"]["declared_in_database"] is True
+    assert by_oxide["TiO2"]["passed_by_build"] is True
+    assert by_oxide["K2O"]["declared_in_database"] is True
+    assert by_oxide["K2O"]["passed_by_build"] is True
+    assert by_oxide["P2O5"]["declared_in_database"] is False
+    assert by_oxide["P2O5"]["passed_by_build"] is False
+
+
+def test_hp633_composition_metadata_and_bulk_order(tmp_path: Path) -> None:
+    near = [model for model in make_compositions.lunar_models() if model.project == NEAR_PROJECT][0]
+
+    make_compositions.write_composition(near, outdir=tmp_path, database="hp633")
+
+    data = json.loads((tmp_path / f"{NEAR_PROJECT}.json").read_text())
+    build = data["perplex_build"]
+    assert build["database_name"] == "hp633"
+    assert build["thermodynamic_database"] == "hp633ver.dat"
+    assert build["solution_model_file"] == "solution_model.dat"
+    assert build["source_only_oxides"] == ["P2O5"]
+    assert build["bulk_values_order"] == ["Na2O", "MgO", "Al2O3", "SiO2", "K2O", "CaO", "TiO2", "FeO"]
+    assert data["omitted_oxides_from_build"] == []
+
+    bulk_values = (tmp_path / f"{NEAR_PROJECT}_bulk_values.txt").read_text().strip()
+    assert bulk_values == "0.60060060 9.20920921 14.91491491 45.44544545 0.00000000 11.81181181 3.90390390 14.11411411"
+
+
+def test_hp633_config_uses_matching_default_template(tmp_path: Path) -> None:
+    perplex_dir = make_fake_perplex(tmp_path)
+    config = {
+        "perplex_dir": str(perplex_dir),
+        "database": "hp633",
+        "build_template_file": str(PIPELINE_DIR / "build_inputs" / "lunar_stx21_template.build.in"),
+        "models": [
+            {
+                "project": PROJECT,
+                "composition_file": str(tmp_path / "composition.json"),
+                "output_dir": str(tmp_path / "outputs" / PROJECT),
+            }
+        ],
+    }
+    config_path = tmp_path / "models.json"
+    config_path.write_text(json.dumps(config) + "\n")
+
+    loaded = run_perplex.load_config(config_path)
+
+    assert loaded.database == "hp633"
+    assert loaded.models[0].database == "hp633"
+    assert loaded.models[0].build_input_file == PIPELINE_DIR / "build_inputs" / "lunar_hp633_template.build.in"
+
+
+def test_render_hp633_build_input_uses_hp_bulk_values(tmp_path: Path) -> None:
+    composition_file = tmp_path / "composition.json"
+    composition_file.write_text(
+        json.dumps(
+            {
+                "composition_normalized": {
+                    "SiO2": 45.0,
+                    "TiO2": 4.0,
+                    "Al2O3": 15.0,
+                    "FeO": 14.0,
+                    "MgO": 9.0,
+                    "CaO": 12.0,
+                    "Na2O": 0.5,
+                    "K2O": 0.5,
+                    "P2O5": 0.0,
+                }
+            }
+        )
+        + "\n"
+    )
+    build_input_file = tmp_path / "hp.build.in"
+    build_input_file.write_text("${PERPLEX_BULK_VALUES}\n")
+    model = run_perplex.ModelConfig(
+        project=PROJECT,
+        composition_file=composition_file,
+        build_input_file=build_input_file,
+        output_dir=tmp_path / "output",
+        work_dir=tmp_path / "work",
+        database="hp633",
+    )
+
+    rendered = run_perplex.render_build_input(tmp_path / "fake_perplex", model)
+
+    assert rendered.strip() == "0.50000000 9.00000000 15.00000000 45.00000000 0.50000000 12.00000000 4.00000000 14.00000000"
 
 
 def test_planetprofile_native_conversion(tmp_path: Path) -> None:

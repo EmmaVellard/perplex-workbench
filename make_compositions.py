@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+from perplex_workbench.core.config import DATABASES
+from perplex_workbench.core.database_utils import get_database_components, get_source_only_oxides
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -37,7 +40,9 @@ PERPLEX_BUILD_COMPONENTS = (
     ("FeO", "FEO"),
 )
 ACTIVE_BUILD_OXIDES = {oxide for oxide, _ in PERPLEX_BUILD_COMPONENTS}
+SOURCE_ONLY_OXIDES = tuple(oxide for oxide in OXIDE_ORDER if oxide not in ACTIVE_BUILD_OXIDES)
 OMITTED_OXIDE_THRESHOLD = 1.0e-12
+DEFAULT_DATABASE = "stx21"
 
 
 @dataclass(frozen=True)
@@ -54,6 +59,7 @@ class LunarComposition:
         "PlanetProfile table mechanics; not a sampled mantle composition."
     )
     literature_proxy: bool = True
+    database: str = DEFAULT_DATABASE
 
 
 def ordered_composition(composition: dict[str, float]) -> dict[str, float]:
@@ -84,11 +90,55 @@ def resolve_path(value: str | Path, base_dir: Path = BASE_DIR) -> Path:
     return (base_dir / path).resolve()
 
 
-def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
+def resolve_database_name(database: str | None) -> str:
+    name = database or DEFAULT_DATABASE
+    if name not in DATABASES:
+        available = ", ".join(sorted(DATABASES))
+        raise ValueError(f"Unknown thermodynamic database '{name}'. Available: {available}")
+    return name
+
+
+def build_components_for_database(database: str) -> tuple[tuple[str, str], ...]:
+    return get_database_components(resolve_database_name(database))
+
+
+def write_composition(
+    model: LunarComposition,
+    outdir: Path = OUTDIR,
+    database: str | None = None,
+) -> None:
+    database_name = resolve_database_name(database or model.database)
+    db = DATABASES[database_name]
+    build_components = build_components_for_database(database_name)
+    source_only_oxides = get_source_only_oxides(database_name)
     outdir.mkdir(parents=True, exist_ok=True)
     raw = ordered_composition(model.raw_wt_percent)
     normalized = normalize_wt_percent(raw)
-    omitted_oxides = omitted_oxides_from_default_build(raw, normalized)
+    omitted_oxides = omitted_oxides_from_default_build(raw, normalized, database=database_name)
+    build_bulk_values = {
+        oxide: normalized[oxide]
+        for oxide, _ in build_components
+    }
+
+    build_metadata = {
+        "database_name": database_name,
+        "thermodynamic_database": db.database_file,
+        "solution_model_file": db.solution_model_file,
+        "active_components": [
+            {"oxide": oxide, "component": component}
+            for oxide, component in build_components
+        ],
+        "source_only_oxides": list(source_only_oxides),
+        "bulk_values_normalized_wt_percent": build_bulk_values,
+        "bulk_values_order": [component for _, component in build_components],
+        "omitted_oxides": omitted_oxides,
+        "omission_caveat": (
+            f"The {database_name} BUILD profile passes only the active component list to "
+            "Perple_X. Source-only oxides are retained for provenance and plotting but are "
+            "not modeled by this thermodynamic setup unless the database, solution model, "
+            "and BUILD template are changed together."
+        ),
+    }
 
     document = {
         "project": model.project,
@@ -104,19 +154,9 @@ def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
         "placeholder": False,
         "literature_proxy": model.literature_proxy,
         "source_note": model.source_note,
-        "default_perplex_build": {
-            "active_components": [
-                {"oxide": oxide, "component": component}
-                for oxide, component in PERPLEX_BUILD_COMPONENTS
-            ],
-            "omitted_oxides": omitted_oxides,
-            "omission_caveat": (
-                "The default stx21 BUILD template omits oxides that are not in the "
-                "active component list. Nonzero TiO2 is therefore recorded here but "
-                "not passed to Perple_X, weakening any Ti-rich maria versus highlands "
-                "interpretation."
-            ),
-        },
+        "perplex_build": build_metadata,
+        "default_perplex_build": build_metadata,
+        "omitted_oxides_from_build": omitted_oxides,
         "omitted_oxides_from_default_build": omitted_oxides,
         "notes": [
             MODEL_STATUS,
@@ -125,7 +165,15 @@ def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
             "Fe is represented as FeO for the silicate component.",
             "Do not include native Fe, Ni, or Cu unless metallic phases and their elastic properties are intentionally modeled.",
             "KREEP/Th/U/K radiogenic effects should mostly be represented in PlanetProfile thermal/radiogenic parameters.",
-            "The stx21ver.dat Perple_X database used by this pipeline supports NA2O, MGO, AL2O3, SIO2, CAO, and FEO; TiO2, K2O, and P2O5 are retained in the composition record but omitted from BUILD.",
+            (
+                f"The {db.database_file} Perple_X profile models "
+                + ", ".join(component for _, component in build_components)
+                + (
+                    f"; {', '.join(source_only_oxides)} are retained as source-only oxides and omitted from BUILD."
+                    if source_only_oxides
+                    else "; no configured oxides are source-only for this profile."
+                )
+            ),
         ],
     }
 
@@ -134,8 +182,8 @@ def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
 
     values_path = outdir / f"{model.project}_bulk_values.txt"
     with values_path.open("w", encoding="utf-8") as handle:
-        for oxide in OXIDE_ORDER:
-            handle.write(f"{normalized[oxide]:.8f}\n")
+        handle.write(" ".join(f"{build_bulk_values[oxide]:.8f}" for oxide, _ in build_components))
+        handle.write("\n")
 
     summary_path = outdir / f"{model.project}_summary.txt"
     with summary_path.open("w", encoding="utf-8") as handle:
@@ -146,8 +194,11 @@ def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
         for oxide in OXIDE_ORDER:
             handle.write(f"{oxide:8s} {normalized[oxide]:10.5f}\n")
         handle.write(f"\nTotal: {sum(normalized.values()):.5f}\n")
+        handle.write(f"\n{database_name} BUILD values, normalized wt%:\n")
+        for oxide, component in build_components:
+            handle.write(f"{component:8s} {normalized[oxide]:10.5f}\n")
         if omitted_oxides:
-            handle.write("\nOmitted from default stx21 BUILD:\n")
+            handle.write(f"\nSource-only / omitted from {database_name} BUILD:\n")
             for item in omitted_oxides:
                 handle.write(f"{item['oxide']:8s} {item['normalized_wt_percent']:10.5f}\n")
 
@@ -159,23 +210,29 @@ def write_composition(model: LunarComposition, outdir: Path = OUTDIR) -> None:
 def omitted_oxides_from_default_build(
     raw: dict[str, float],
     normalized: dict[str, float],
+    database: str = DEFAULT_DATABASE,
 ) -> list[dict[str, float | str]]:
+    database_name = resolve_database_name(database)
+    active_oxides = {oxide for oxide, _ in build_components_for_database(database_name)}
     omitted: list[dict[str, float | str]] = []
     for oxide in OXIDE_ORDER:
         value = normalized[oxide]
-        if oxide not in ACTIVE_BUILD_OXIDES and abs(value) > OMITTED_OXIDE_THRESHOLD:
+        if oxide not in active_oxides and abs(value) > OMITTED_OXIDE_THRESHOLD:
             omitted.append(
                 {
                     "oxide": oxide,
                     "raw_wt_percent": raw[oxide],
                     "normalized_wt_percent": value,
-                    "reason": "not_in_default_stx21_active_component_list",
+                    "reason": f"not_in_{database_name}_active_component_list",
                 }
             )
     return omitted
 
 
-def model_from_config_entry(entry: dict) -> LunarComposition | None:
+def model_from_config_entry(
+    entry: dict,
+    default_database: str = DEFAULT_DATABASE,
+) -> LunarComposition | None:
     composition = (
         entry.get("oxides_wt_percent")
         or entry.get("raw_wt_percent")
@@ -205,21 +262,27 @@ def model_from_config_entry(entry: dict) -> LunarComposition | None:
             "User-defined oxide composition; scientific interpretation was not provided in the config.",
         ),
         literature_proxy=bool(entry.get("literature_proxy", False)),
+        database=resolve_database_name(entry.get("database", default_database)),
     )
 
 
-def models_from_config(config_path: Path, project: str | None = None) -> list[LunarComposition]:
+def models_from_config(
+    config_path: Path,
+    project: str | None = None,
+    database_override: str | None = None,
+) -> list[LunarComposition]:
     if not config_path.exists():
         raise FileNotFoundError(
             f"Missing config file: {config_path}. Copy configs/models.example.json to configs/models.json "
             "and set perplex_dir to your local Perple_X install."
         )
     data = json.loads(config_path.read_text(encoding="utf-8"))
+    default_database = resolve_database_name(database_override or data.get("database", DEFAULT_DATABASE))
     models: list[LunarComposition] = []
     for entry in data.get("models", []):
         if project and entry.get("project") != project:
             continue
-        model = model_from_config_entry(entry)
+        model = model_from_config_entry(entry, default_database=default_database)
         if model is not None:
             models.append(model)
 
@@ -232,18 +295,23 @@ def models_from_config(config_path: Path, project: str | None = None) -> list[Lu
     return models
 
 
-def configured_or_default_models(config_path: Path, project: str | None = None) -> list[LunarComposition]:
+def configured_or_default_models(
+    config_path: Path,
+    project: str | None = None,
+    database_override: str | None = None,
+) -> list[LunarComposition]:
     if config_path.exists():
-        models = models_from_config(config_path, project=project)
+        models = models_from_config(config_path, project=project, database_override=database_override)
         data = json.loads(config_path.read_text(encoding="utf-8"))
         if models or data.get("models"):
             return models
+    default_database = resolve_database_name(database_override)
     if project:
         selected = [model for model in lunar_models() if model.project == project]
         if not selected:
             raise ValueError(f"Project not found: {project}")
-        return selected
-    return lunar_models()
+        return [replace(model, database=default_database) for model in selected]
+    return [replace(model, database=default_database) for model in lunar_models()]
 
 
 def lunar_models() -> list[LunarComposition]:
@@ -293,8 +361,8 @@ def lunar_models() -> list[LunarComposition]:
             ),
             composition_interpretation=(
                 "Average maria-like lunar surface oxide composition used to test the near-side "
-                "end of a terrane contrast; nonzero TiO2 is not passed to BUILD in the default "
-                "stx21 setup, so it is not a final Ti-bearing mantle EOS model."
+                "end of a terrane contrast; TiO2 is source-only in the default stx21 setup, "
+                "so it is not a final Ti-bearing mantle EOS model."
             ),
         ),
     ]
@@ -308,13 +376,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate normalized composition files.")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Path to models config.")
     parser.add_argument("--project", help="Generate only one project from the config.")
+    parser.add_argument(
+        "--database",
+        choices=sorted(DATABASES),
+        help="Thermodynamic database profile to use instead of the config value.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     config_path = resolve_path(args.config, BASE_DIR)
-    models = configured_or_default_models(config_path, project=args.project)
+    models = configured_or_default_models(
+        config_path,
+        project=args.project,
+        database_override=args.database,
+    )
     if not models:
         print("No inline compositions to generate; using configured composition files as-is.")
         return

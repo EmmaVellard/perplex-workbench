@@ -36,10 +36,9 @@ from perplex_workbench.gui.database_selector import (
 from perplex_workbench.gui.import_export import show_import_export_panel
 from perplex_workbench.gui.phase_diagram import show_phase_diagram_panel
 from perplex_workbench.gui.validation_enhanced import show_enhanced_validation
+from perplex_workbench.core.database_utils import get_database_components
 from perplex_workbench.core.model_schema import (
-    ACTIVE_BUILD_COMPONENTS,
     OXIDE_ORDER,
-    SOURCE_ONLY_OXIDES,
     composition_plot_rows,
     new_model_template,
     omitted_oxides_for_model,
@@ -139,7 +138,15 @@ def model_label(model: dict[str, Any]) -> str:
     return f"{project} ({status})"
 
 
-def compact_model_overview_rows(models: list[dict[str, Any]], selected_project: str | None = None) -> list[dict[str, Any]]:
+def active_component_text(database: str) -> str:
+    return " ".join(component for _, component in get_database_components(database))
+
+
+def compact_model_overview_rows(
+    models: list[dict[str, Any]],
+    selected_project: str | None = None,
+    database: str = "stx21",
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for model in models:
         project = str(model.get("project", ""))
@@ -149,7 +156,7 @@ def compact_model_overview_rows(models: list[dict[str, Any]], selected_project: 
         except (TypeError, ValueError):
             total = None
         try:
-            omitted = ", ".join(str(item["oxide"]) for item in omitted_oxides_for_model(model)) or "none"
+            omitted = ", ".join(str(item["oxide"]) for item in omitted_oxides_for_model(model, database=database)) or "none"
         except (TypeError, ValueError):
             omitted = "unknown"
         rows.append(
@@ -168,7 +175,11 @@ def compact_model_overview_rows(models: list[dict[str, Any]], selected_project: 
     return rows
 
 
-def detailed_model_overview_rows(models: list[dict[str, Any]], selected_project: str | None = None) -> list[dict[str, Any]]:
+def detailed_model_overview_rows(
+    models: list[dict[str, Any]],
+    selected_project: str | None = None,
+    database: str = "stx21",
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for model in models:
         project = str(model.get("project", ""))
@@ -178,7 +189,7 @@ def detailed_model_overview_rows(models: list[dict[str, Any]], selected_project:
         except (TypeError, ValueError):
             total = None
         try:
-            omitted = ", ".join(str(item["oxide"]) for item in omitted_oxides_for_model(model)) or "none"
+            omitted = ", ".join(str(item["oxide"]) for item in omitted_oxides_for_model(model, database=database)) or "none"
         except (TypeError, ValueError):
             omitted = "unknown"
         source_composition = (
@@ -247,9 +258,13 @@ def show_oxide_table(rows: list[dict[str, Any]], database: str = "stx21") -> Non
     )
 
 
-def show_model_catalog(models: list[dict[str, Any]], selected_project: str | None = None) -> None:
+def show_model_catalog(
+    models: list[dict[str, Any]],
+    selected_project: str | None = None,
+    database: str = "stx21",
+) -> None:
     st.dataframe(
-        compact_model_overview_rows(models, selected_project),
+        compact_model_overview_rows(models, selected_project, database=database),
         width="stretch",
         hide_index=True,
         column_config={
@@ -258,7 +273,7 @@ def show_model_catalog(models: list[dict[str, Any]], selected_project: str | Non
     )
     with st.expander("Detailed metadata and oxide values"):
         st.dataframe(
-            detailed_model_overview_rows(models, selected_project),
+            detailed_model_overview_rows(models, selected_project, database=database),
             width="stretch",
             hide_index=True,
             column_config={
@@ -375,15 +390,15 @@ def editable_model_form(config_path: Path, config: dict[str, Any], model: dict[s
 
     rows = oxide_table_rows(model, database=database)
     show_oxide_table(rows, database=database)
-    omitted = omitted_oxides_for_model(model)
+    omitted = omitted_oxides_for_model(model, database=database)
     if omitted:
         st.warning(
-            "Omitted from default BUILD: "
+            f"Omitted from {database} BUILD: "
             + ", ".join(f"{item['oxide']}={item['normalized_wt_percent']:.2f} wt%" for item in omitted)
         )
 
-    st.caption("Default active BUILD components")
-    st.code(" ".join(component for _, component in ACTIVE_BUILD_COMPONENTS), language="text")
+    st.caption(f"Active {database} BUILD components")
+    st.code(active_component_text(database), language="text")
 
     with st.form("model_editor"):
         edited = deepcopy(model)
@@ -646,14 +661,14 @@ def composition_workspace(config_path: Path, config: dict[str, Any], models: lis
     with guardrail_col:
         if validation.ok:
             show_scientific_guardrail(edited, database=database)
-            omitted = omitted_oxides_for_model(edited)
+            omitted = omitted_oxides_for_model(edited, database=database)
             if omitted:
                 st.warning(
-                    "Omitted from default BUILD: "
+                    f"Omitted from {database} BUILD: "
                     + ", ".join(f"{item['oxide']}={item['normalized_wt_percent']:.2f} wt%" for item in omitted)
                 )
-        st.caption("Default active BUILD components")
-        st.code(" ".join(component for _, component in ACTIVE_BUILD_COMPONENTS), language="text")
+        st.caption(f"Active {database} BUILD components")
+        st.code(active_component_text(database), language="text")
 
     if st.button("Save composition to config", disabled=not validation.ok or duplicate_project):
         updated_config = replace_model_entry(config, source_project, edited)
@@ -815,6 +830,7 @@ def main() -> None:
     if not models:
         st.error("No models are configured.")
         return
+    current_database = get_current_database(config)
 
     with st.sidebar:
         st.caption("Saved model used by review, generate, run, and export steps")
@@ -844,7 +860,7 @@ def main() -> None:
 
         st.divider()
         st.subheader("Saved models")
-        show_model_catalog(models, selected_project)
+        show_model_catalog(models, selected_project, database=current_database)
         with st.expander("Delete a saved model"):
             delete_model_panel(config_path, config, models, selected_project)
         return
@@ -868,7 +884,7 @@ def main() -> None:
             "Use the sidebar selector to switch between saved models. "
             "To create or edit a source composition, switch the sidebar main task to Build Composition."
         )
-        show_scientific_guardrail(selected_model)
+        show_scientific_guardrail(selected_model, database=current_database)
 
         st.subheader("Configuration")
         config_col1, config_col2 = st.columns([1, 1])
@@ -891,7 +907,7 @@ def main() -> None:
             "Use this table to compare saved compositions before running the pipeline. "
             "The selected model is the one used by Review, Generate, Run, and Export."
         )
-        show_model_catalog(models, selected_project)
+        show_model_catalog(models, selected_project, database=current_database)
         with st.expander("Delete a saved model"):
             delete_model_panel(config_path, config, models, selected_project)
 
@@ -903,12 +919,12 @@ def main() -> None:
         st.metric("Input oxide total, wt%", f"{raw_total(selected_model):.2f}")
         review_rows = oxide_table_rows(selected_model, database=database)
         st.dataframe(rounded_oxide_rows(review_rows, database=database), width="stretch", hide_index=True)
-        st.subheader("Default BUILD Components")
-        st.code(" ".join(component for _, component in ACTIVE_BUILD_COMPONENTS), language="text")
-        omitted = omitted_oxides_for_model(selected_model)
+        st.subheader(f"{database} BUILD Components")
+        st.code(active_component_text(database), language="text")
+        omitted = omitted_oxides_for_model(selected_model, database=database)
         if omitted:
             st.warning(
-                "These oxides are present in the composition record but omitted from default BUILD: "
+                f"These oxides are present in the composition record but omitted from {database} BUILD: "
                 + ", ".join(str(item["oxide"]) for item in omitted)
             )
         st.info("Next step: generate composition files. This writes generated artifacts from the saved config.")

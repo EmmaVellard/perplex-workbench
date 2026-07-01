@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/EmmaVellard/perplex-workbench/workflows/Tests/badge.svg)](https://github.com/EmmaVellard/perplex-workbench/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 A GUI-first workflow for defining rock/planetary compositions, running Perple_X BUILD/VERTEX/WERAMI, validating outputs, and exporting PlanetProfile-ready EOS tables.
 
@@ -11,7 +11,7 @@ The included Moon near-side/far-side models are example smoke tests. They are us
 ## Installation
 
 ### Prerequisites
-- Python 3.9 or later
+- Python 3.10 or later
 - [Perple_X](https://github.com/jadconnolly/Perple_X) installed locally
 - Docker (optional, for containerized usage)
 
@@ -111,9 +111,11 @@ Do not edit generated files in `compositions/` or `outputs/` as the source of tr
 - Database file: `stx21ver.dat`
 
 **hp633** - Holland & Powell 2011 (v6.33)
-- Modeled oxides: Na2O, MgO, Al2O3, SiO2, CaO, FeO, TiO2, K2O, P2O5
-- Best for: Compositions requiring Ti, K, P
+- Modeled oxides: Na2O, MgO, Al2O3, SiO2, K2O, CaO, TiO2, FeO
+- Source-only oxide in the default profile: P2O5
+- Best for: Compositions requiring TiO2 or K2O
 - Database file: `hp633ver.dat`
+- Solution model file: `solution_model.dat`
 
 ### Selecting a Database
 
@@ -136,7 +138,7 @@ perplex-gui
 perplex-run --database hp633
 ```
 
-The GUI still lets you record `TiO2`, `K2O`, and `P2O5` because they are common source-composition fields. With the default stx21 profile they are source-only: saved in metadata and plots, but not modeled by Perple_X. Use a custom thermodynamic database, solution model file, and BUILD input before interpreting Ti/K/P effects.
+The GUI still lets you record `TiO2`, `K2O`, and `P2O5` because they are common source-composition fields. With the default stx21 profile, all three are source-only. With the default hp633 profile, TiO2 and K2O are passed to BUILD, while P2O5 remains source-only. Use a custom thermodynamic database, solution model file, and BUILD input before interpreting P-bearing effects.
 
 ## Command Line Interface
 

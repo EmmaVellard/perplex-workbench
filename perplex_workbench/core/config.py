@@ -48,11 +48,14 @@ DATABASES = {
     "hp633": ThermodynamicDatabase(
         name="hp633",
         database_file="hp633ver.dat",
-        solution_model_file="hp633_solution_model.dat",
+        solution_model_file="solution_model.dat",
         excluded_phases=(),
-        solution_models=("O", "Sp", "Gt", "Cpx", "Opx", "Pl", "Ilm", "Ol"),
+        solution_models=("O(HP)", "Opx(HP)", "Cpx(HP)", "Gt(HP)", "Sp(HP)", "Pl(I1,HP)", "Ilm(WPH)"),
         pt_range=DEFAULT_PT_RANGE.copy(),
-        description="Holland & Powell 2011 (v6.33) - includes Ti, K, P oxides",
+        description=(
+            "Holland & Powell 2011 (v6.33) - includes TiO2 and K2O components; "
+            "P2O5 remains source-only unless a custom P-bearing database is supplied"
+        ),
     ),
 }
 
@@ -220,7 +223,12 @@ class Config:
         # Try both bin/ subdirectory and root
         for exe_name in executables:
             found = False
-            for location in [bin_dir / exe_name, self.perplex_dir / exe_name]:
+            for location in [
+                bin_dir / exe_name,
+                bin_dir / f"{exe_name}.exe",
+                self.perplex_dir / exe_name,
+                self.perplex_dir / f"{exe_name}.exe",
+            ]:
                 if location.exists():
                     found = True
                     break
@@ -244,6 +252,13 @@ class Config:
         if not db_file.exists():
             raise ConfigurationError(
                 f"Database file not found: {db_file} "
+                f"(database: {self.database})"
+            )
+
+        solution_file = datafiles_dir / db_config.solution_model_file
+        if not solution_file.exists():
+            raise ConfigurationError(
+                f"Solution model file not found: {solution_file} "
                 f"(database: {self.database})"
             )
 

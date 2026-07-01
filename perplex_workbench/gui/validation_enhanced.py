@@ -90,13 +90,21 @@ def enhanced_validate_model(model: dict[str, Any], database: str = "stx21") -> l
             significant_inactive.append(f"{oxide}={value:.2f} wt%")
 
     if significant_inactive:
-        other_db = "hp633" if database == "stx21" else "stx21"
+        if database == "stx21":
+            suggestion = (
+                "Consider switching to hp633 if TiO2 or K2O are important, or accept that "
+                "source-only oxides will be omitted from BUILD calculations."
+            )
+        else:
+            suggestion = (
+                "Use a custom thermodynamic database and BUILD template if these oxides must "
+                "be modeled, or accept that they will be omitted from BUILD calculations."
+            )
         issues.append(
             ValidationIssue(
                 severity="warning",
                 message=f"Database '{database}' does not model: {', '.join(significant_inactive)}",
-                suggestion=f"Consider switching to {other_db} database if these oxides are important, "
-                f"or accept that they will be omitted from BUILD calculations",
+                suggestion=suggestion,
             )
         )
 
