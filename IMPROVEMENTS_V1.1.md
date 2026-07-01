@@ -1,6 +1,6 @@
 # Perple_X Workbench v1.1 - GUI Enhancements Summary
 
-## Completed Implementations
+## ✅ All Features Completed (8 of 9)
 
 ### 1. ✅ Database Selector GUI
 - **Location**: `perplex_workbench/gui/database_selector.py`
@@ -32,96 +32,73 @@
 
 **Usage**: Composition Builder mode has new "Import/Export Compositions" expander
 
-### 4. ✅ Updated Dependencies
+### 4. ✅ Batch Processing / Parameter Sweeps
+- **Location**: `perplex_workbench/gui/batch_processor.py`
+- **Features**:
+  - Systematic parameter variation (min/max/step)
+  - Preview generated models before saving
+  - Run batch through existing pipeline
+  - Results matrix with validation and properties
+
+**Usage**: New "Batch Processing" workspace mode in sidebar
+
+### 5. ✅ Model Comparison Tools
+- **Location**: `perplex_workbench/gui/comparison_tools.py`
+- **Features**:
+  - Compare 2-4 models side-by-side
+  - Composition bar charts with differences
+  - Property profile overlays (Plotly)
+  - Validation status comparison
+
+**Usage**: New "Compare Models" workspace mode in sidebar
+
+### 6. ✅ Phase Diagram Visualization
+- **Location**: `perplex_workbench/gui/phase_diagram.py`, `perplex_workbench/core/phase_parser.py`
+- **Features**:
+  - Interactive P-T coverage plots
+  - Density contours on phase space
+  - Property overlays (Plotly)
+  - P-T grid extraction from output
+
+**Usage**: Step 5 "Validate/Export" now has Phase Diagram tab
+
+### 7. ✅ Auto-Save / Draft Persistence
+- **Location**: `perplex_workbench/gui/autosave.py`
+- **Features**:
+  - Session-state based draft saving
+  - Recovery on page refresh
+  - Manual draft clearing
+  - Auto-save toggle
+
+**Usage**: Auto-save controls in sidebar
+
+### 8. ✅ Updated Dependencies
 - **Files**: `pyproject.toml`, `requirements.txt`
 - **Added**: pandas, openpyxl, plotly
 - **Version**: All dependencies pinned with upper bounds
 
 ---
 
-## Remaining Features (To Implement)
+## Deferred Feature (1 of 9)
 
-The following features have been planned and designed but require additional implementation:
+The following feature was planned but deferred for future implementation:
 
-### 5. Real-Time Progress Bars
-**Status**: Planned
-**Files to create**:
-- `perplex_workbench/gui/progress_enhanced.py`
+### Real-Time Progress Bars
+**Status**: Deferred to v1.2
+**Reason**: Requires significant refactoring of subprocess handling
 
-**Key features**:
+**Planned features**:
 - Phase-aware progress tracking (BUILD → VERTEX → WERAMI)
 - Elapsed time and ETA estimates
 - Parse output for iteration counts
 - Non-blocking UI with background threads
 
-**Implementation notes**:
-- Enhance existing `BackgroundTaskRunner` in `progress.py`
-- Add phase detection from command output
-- Integrate into `run_streamlit_command()`
-
-### 6. Batch Processing / Parameter Sweeps
-**Status**: Planned
-**Files to create**:
-- `perplex_workbench/gui/batch_processor.py`
-
-**Key features**:
-- Vary single oxide parameter with min/max/step
-- Generate multiple model variations
-- Run batch through existing pipeline
-- Results matrix view
-
-**Implementation notes**:
-- Add "Batch Processing" workspace mode
-- Generate models with systematic variations
-- Use existing pipeline runner for execution
-
-### 7. Model Comparison Tools
-**Status**: Planned
-**Files to create**:
-- `perplex_workbench/gui/comparison_tools.py`
-
-**Key features**:
-- Select 2-4 models to compare
-- Side-by-side composition bar charts
-- Property profiles overlay (Plotly)
-- Validation status table
-
-**Implementation notes**:
-- Add "Compare Models" tab in Step 5
-- Use Plotly subplots for multi-property comparison
-- Leverage existing `plot_comparisons.py` functions
-
-### 8. Phase Diagram Visualization
-**Status**: Planned
-**Files to create**:
-- `perplex_workbench/gui/phase_diagram.py`
-- `perplex_workbench/core/phase_parser.py`
-
-**Key features**:
-- Parse VERTEX logs for phase assemblages
-- Interactive P-T phase diagram (Plotly)
-- Property contour overlays
-- Hover tooltips showing stable phases
-
-**Implementation notes**:
-- Phase parsing is heuristic (VERTEX doesn't output structured phase data)
-- Fallback: infer from property discontinuities in .tab file
-- Add phase diagram subtab in Step 5
-
-### 9. Auto-Save / Undo
-**Status**: Planned (Experimental)
-**Files to create**:
-- `perplex_workbench/gui/autosave.py`
-
-**Key features**:
-- Save work-in-progress to session state
-- Recovery banner on app restart
-- Manual draft clearing
-
-**Implementation notes**:
-- Simplified version uses `st.session_state` (in-session only)
-- Full browser localStorage requires custom JavaScript component
-- Auto-save checkbox in sidebar
+**Why deferred**:
+- Current `run_perplex.py` uses blocking `subprocess.run()`
+- Need to refactor to `subprocess.Popen()` with streaming
+- Requires parsing Perple_X tool output formats
+- BackgroundTaskRunner exists but needs enhancement
+- Better as focused v1.2 feature after v1.1 testing
 
 ---
 
@@ -214,18 +191,30 @@ All enhancements are GUI-layer only - core pipeline unchanged.
 
 ## Changelog
 
-### v1.1-dev (2024-07-01)
+### v1.1 (2024-07-01)
 
 **Added**:
-- Database selector GUI (stx21/hp633)
-- Enhanced validation with actionable suggestions
-- CSV/Excel composition import/export
-- pandas, openpyxl, plotly dependencies
+- **Database selector GUI**: Switch between stx21/hp633 in GUI
+- **Enhanced validation**: Actionable error messages with suggestions
+- **CSV/Excel import/export**: Import and export compositions
+- **Batch processing**: Parameter sweep generation and execution
+- **Model comparison**: Side-by-side analysis of 2-4 models
+- **Phase diagrams**: Interactive P-T coverage with Plotly
+- **Auto-save**: Session-state draft persistence
+- **New workspace modes**: Batch Processing, Compare Models
+- **Dependencies**: pandas, openpyxl, plotly
 
 **Changed**:
-- All oxide tables now display selected database
-- Composition workspace shows database-specific active oxides
-- Database field persisted in config.json
+- All oxide tables now database-aware
+- Composition workspace shows database-specific oxides
+- Step 5 reorganized into tabs (Validation, Phase Diagram, Export)
+- Sidebar shows 4 workspace modes + auto-save controls
 
 **Fixed**:
 - Hardcoded "stx21" references now database-aware
+- Database field persists in config.json
+
+**Known Limitations**:
+- Real-time progress bars deferred to v1.2
+- Phase diagrams show P-T coverage (not full phase boundaries)
+- Auto-save is session-only (no cross-session persistence)
