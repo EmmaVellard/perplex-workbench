@@ -9,10 +9,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import make_compositions
 import run_perplex
 
+from perplex_workbench.core.database_utils import (
+    get_active_oxides,
+    get_database_components,
+    get_source_only_oxides,
+)
+
 OXIDE_ORDER = tuple(make_compositions.OXIDE_ORDER)
+# Legacy constants for backward compatibility (stx21 defaults)
 ACTIVE_BUILD_COMPONENTS = tuple(run_perplex.PERPLEX_COMPONENTS)
 ACTIVE_BUILD_OXIDES = {oxide for oxide, _ in ACTIVE_BUILD_COMPONENTS}
 SOURCE_ONLY_OXIDES = tuple(oxide for oxide in OXIDE_ORDER if oxide not in ACTIVE_BUILD_OXIDES)
+
 DEFAULT_SCIENTIFIC_STATUS = "surface_proxy_smoke_test"
 DEFAULT_MODEL_SCOPE = "surface_terrane_proxy"
 DEFAULT_PLANETPROFILE_READINESS = "mechanically_exportable_not_scientifically_final"
@@ -100,17 +108,28 @@ def omitted_oxides_for_model(model: dict[str, Any]) -> list[dict[str, float | st
     return omitted_oxides_for_composition(composition_from_model(model))
 
 
-def oxide_table_rows(model: dict[str, Any]) -> list[dict[str, Any]]:
+def oxide_table_rows(model: dict[str, Any], database: str = "stx21") -> list[dict[str, Any]]:
+    """Generate oxide table rows for a model, database-aware.
+
+    Args:
+        model: Model configuration dictionary
+        database: Database name (default: "stx21")
+
+    Returns:
+        List of dictionaries with oxide information
+    """
     raw = composition_from_model(model)
     normalized = normalize_composition(raw)
     omitted = {item["oxide"] for item in omitted_oxides_for_composition(raw)}
+    active_oxides = get_active_oxides(database)
+
     return [
         {
             "oxide": oxide,
             "raw_wt_percent": raw[oxide],
             "normalized_wt_percent": normalized[oxide],
-            "build_role": "modeled by default stx21 BUILD" if oxide in ACTIVE_BUILD_OXIDES else "source-only in default stx21",
-            "active_in_default_build": oxide in ACTIVE_BUILD_OXIDES,
+            "build_role": f"modeled by {database} BUILD" if oxide in active_oxides else f"source-only in {database}",
+            "active_in_default_build": oxide in active_oxides,
             "omitted_from_default_build": oxide in omitted,
         }
         for oxide in OXIDE_ORDER
@@ -159,13 +178,24 @@ def use_as_final_moon_mantle_eos(model: dict[str, Any]) -> bool:
     return readiness == "publication_ready" and status == "publication_ready"
 
 
-def scientific_guardrail_text(model: dict[str, Any]) -> str:
+def scientific_guardrail_text(model: dict[str, Any], database: str = "stx21") -> str:
+    """Generate scientific guardrail text for a model, database-aware.
+
+    Args:
+        model: Model configuration dictionary
+        database: Database name (default: "stx21")
+
+    Returns:
+        Formatted guardrail text
+    """
     omitted = omitted_oxides_for_model(model)
     omitted_names = ", ".join(str(item["oxide"]) for item in omitted) or "none"
+    source_only = get_source_only_oxides(database)
+
     return (
         f"Scientific status: {model.get('scientific_status', 'unknown')}\n"
         f"PlanetProfile readiness: {model.get('planetprofile_readiness', 'unknown')}\n"
-        f"Source-only oxides in default stx21 BUILD: {', '.join(SOURCE_ONLY_OXIDES)}\n"
+        f"Source-only oxides in {database} BUILD: {', '.join(source_only) if source_only else 'none'}\n"
         f"Nonzero omitted oxides: {omitted_names}\n"
         f"Use as final Moon mantle EOS: {'yes' if use_as_final_moon_mantle_eos(model) else 'no'}"
     )

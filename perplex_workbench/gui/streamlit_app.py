@@ -26,6 +26,12 @@ from perplex_workbench.core.config_io import (
     save_config_json,
     update_perplex_dir,
 )
+from perplex_workbench.gui.database_selector import (
+    get_current_database,
+    show_database_selector,
+)
+from perplex_workbench.gui.import_export import show_import_export_panel
+from perplex_workbench.gui.validation_enhanced import show_enhanced_validation
 from perplex_workbench.core.model_schema import (
     ACTIVE_BUILD_COMPONENTS,
     OXIDE_ORDER,
@@ -202,30 +208,30 @@ def detailed_model_overview_rows(models: list[dict[str, Any]], selected_project:
     return rows
 
 
-def show_scientific_guardrail(model: dict[str, Any]) -> None:
-    st.code(scientific_guardrail_text(model), language="text")
+def show_scientific_guardrail(model: dict[str, Any], database: str = "stx21") -> None:
+    st.code(scientific_guardrail_text(model, database=database), language="text")
     if model.get("scientific_status") == "surface_proxy_smoke_test":
         st.warning("This is a surface-proxy smoke test, not a final lunar mantle EOS model.")
     if not use_as_final_moon_mantle_eos(model):
         st.info("Use as final Moon mantle EOS: no")
 
 
-def rounded_oxide_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def rounded_oxide_rows(rows: list[dict[str, Any]], database: str = "stx21") -> list[dict[str, Any]]:
     return [
         {
             "oxide": row["oxide"],
             "your input wt%": round(float(row["raw_wt_percent"]), 2),
             "normalized to 100 wt%": round(float(row["normalized_wt_percent"]), 2),
-            "default stx21 role": row["build_role"],
-            "omitted from default BUILD": row["omitted_from_default_build"],
+            f"{database} role": row["build_role"],
+            "omitted from BUILD": row["omitted_from_default_build"],
         }
         for row in rows
     ]
 
 
-def show_oxide_table(rows: list[dict[str, Any]]) -> None:
+def show_oxide_table(rows: list[dict[str, Any]], database: str = "stx21") -> None:
     st.dataframe(
-        rounded_oxide_rows(rows),
+        rounded_oxide_rows(rows, database=database),
         width="stretch",
         hide_index=True,
         column_config={
@@ -354,14 +360,15 @@ def run_streamlit_command(command: PipelineCommand) -> None:
 
 
 def editable_model_form(config_path: Path, config: dict[str, Any], model: dict[str, Any]) -> None:
+    database = get_current_database(config)
     validation = validate_model_entry(model)
     if validation.errors:
         st.error("Current model has validation errors: " + "; ".join(validation.errors))
     for warning in validation.warnings:
         st.warning(warning)
 
-    rows = oxide_table_rows(model)
-    show_oxide_table(rows)
+    rows = oxide_table_rows(model, database=database)
+    show_oxide_table(rows, database=database)
     omitted = omitted_oxides_for_model(model)
     if omitted:
         st.warning(
@@ -423,6 +430,7 @@ def editable_model_form(config_path: Path, config: dict[str, Any], model: dict[s
 
 
 def composition_workspace(config_path: Path, config: dict[str, Any], models: list[dict[str, Any]]) -> dict[str, Any]:
+    database = get_current_database(config)
     st.header("Composition Builder")
     st.caption(
         "Create or revise source compositions stored in `configs/models.json`. "
@@ -559,9 +567,13 @@ def composition_workspace(config_path: Path, config: dict[str, Any], models: lis
         base_oxides = {}
     edited["oxides_wt_percent"] = {}
     with oxide_col:
+        from perplex_workbench.core.database_utils import get_active_oxides, get_source_only_oxides
+        active_oxides = get_active_oxides(database)
+        source_only_oxides = get_source_only_oxides(database)
+        modeled_oxides = [oxide for oxide in OXIDE_ORDER if oxide in active_oxides]
+
         st.subheader("Modeled Oxides, wt%")
-        st.caption("These oxides are passed to the default stx21 BUILD template.")
-        modeled_oxides = [oxide for oxide in OXIDE_ORDER if oxide not in SOURCE_ONLY_OXIDES]
+        st.caption(f"These oxides are passed to the {database} BUILD template.")
         modeled_columns = st.columns(3)
         for index, oxide in enumerate(modeled_oxides):
             with modeled_columns[index % 3]:
@@ -574,9 +586,9 @@ def composition_workspace(config_path: Path, config: dict[str, Any], models: lis
                     key=f"workspace_oxide_{choice_key}_{oxide}",
                 )
         st.subheader("Source-Only Oxides, wt%")
-        st.caption("Saved in the composition record, plots, and warnings, but not passed to default stx21 BUILD.")
+        st.caption(f"Saved in the composition record, plots, and warnings, but not passed to {database} BUILD.")
         source_columns = st.columns(3)
-        for index, oxide in enumerate(SOURCE_ONLY_OXIDES):
+        for index, oxide in enumerate(source_only_oxides):
             with source_columns[index % 3]:
                 edited["oxides_wt_percent"][oxide] = st.number_input(
                     oxide,
@@ -586,12 +598,12 @@ def composition_workspace(config_path: Path, config: dict[str, Any], models: lis
                     format="%.2f",
                     key=f"workspace_source_oxide_{choice_key}_{oxide}",
                 )
-        st.info(
-            "The default stx21 profile models only "
-            + ", ".join(modeled_oxides)
-            + ". TiO2, K2O, and P2O5 remain editable because they are common source-composition fields, "
-            "but they need a different thermodynamic setup before they can affect Perple_X results."
-        )
+        if source_only_oxides:
+            st.info(
+                f"The {database} database models "
+                + ", ".join(modeled_oxides)
+                + f". {', '.join(source_only_oxides)} are source-only and require a different database to model."
+            )
         with st.expander("Why can't I add other elements here?"):
             st.write(
                 "The GUI is tied to the current Perple_X BUILD component list and composition schema. "
@@ -614,20 +626,20 @@ def composition_workspace(config_path: Path, config: dict[str, Any], models: lis
     preview_col, guardrail_col = st.columns([1.3, 1])
     with preview_col:
         st.metric("Input oxide total, wt%", f"{raw_total(edited):.2f}")
-        rows = oxide_table_rows(edited) if validation.ok else []
+        rows = oxide_table_rows(edited, database=database) if validation.ok else []
         if rows:
             st.caption(
                 "Input values are exactly what you type. The normalized column is the same "
                 "composition scaled to total 100 wt%; that is the composition record used by the pipeline."
             )
-            show_oxide_table(rows)
+            show_oxide_table(rows, database=database)
             plot_rows = composition_plot_rows(edited)
             st.subheader("Composition Plot")
             st.caption("Single plot of the normalized composition. Raw and normalized are not separate models.")
             st.bar_chart({"normalized wt%": {row["oxide"]: round(row["normalized_wt_percent"], 2) for row in plot_rows}})
     with guardrail_col:
         if validation.ok:
-            show_scientific_guardrail(edited)
+            show_scientific_guardrail(edited, database=database)
             omitted = omitted_oxides_for_model(edited)
             if omitted:
                 st.warning(
@@ -814,6 +826,12 @@ def main() -> None:
     if workspace_mode == COMPOSITION_BUILDER_MODE:
         composition_workspace(config_path, config, models)
         st.divider()
+
+        # Import/Export panel
+        with st.expander("📁 Import/Export Compositions"):
+            show_import_export_panel(config_path, config)
+
+        st.divider()
         st.subheader("Saved models")
         show_model_catalog(models, selected_project)
         with st.expander("Delete a saved model"):
@@ -832,13 +850,23 @@ def main() -> None:
             "To create or edit a source composition, switch the sidebar main task to Build Composition."
         )
         show_scientific_guardrail(selected_model)
-        perplex_dir = st.text_input("Perple_X directory", value=str(config.get("perplex_dir", "")))
-        st.caption(
-            "The pipeline needs this path to find the local BUILD, VERTEX, WERAMI executables "
-            "and Perple_X datafiles. Save it only when you change machines or Perple_X locations."
-        )
-        if st.button("Save Perple_X path to config"):
-            write_config(config_path, update_perplex_dir(config, perplex_dir))
+
+        st.subheader("Configuration")
+        config_col1, config_col2 = st.columns([1, 1])
+
+        with config_col1:
+            st.caption("Perple_X Installation")
+            perplex_dir = st.text_input("Perple_X directory", value=str(config.get("perplex_dir", "")))
+            st.caption(
+                "Path to find BUILD, VERTEX, WERAMI executables and datafiles. "
+                "Save when you change machines or Perple_X locations."
+            )
+            if st.button("Save Perple_X path to config"):
+                write_config(config_path, update_perplex_dir(config, perplex_dir))
+
+        with config_col2:
+            st.caption("Thermodynamic Database")
+            current_database = show_database_selector(config, config_path)
         st.subheader("Saved model catalog")
         st.caption(
             "Use this table to compare saved compositions before running the pipeline. "
@@ -849,12 +877,13 @@ def main() -> None:
             delete_model_panel(config_path, config, models, selected_project)
 
     elif step == "2. Review":
+        database = get_current_database(config)
         st.header("Step 2. Review")
         st.subheader(selected_project)
-        show_scientific_guardrail(selected_model)
+        show_scientific_guardrail(selected_model, database=database)
         st.metric("Input oxide total, wt%", f"{raw_total(selected_model):.2f}")
-        review_rows = oxide_table_rows(selected_model)
-        st.dataframe(rounded_oxide_rows(review_rows), width="stretch", hide_index=True)
+        review_rows = oxide_table_rows(selected_model, database=database)
+        st.dataframe(rounded_oxide_rows(review_rows, database=database), width="stretch", hide_index=True)
         st.subheader("Default BUILD Components")
         st.code(" ".join(component for _, component in ACTIVE_BUILD_COMPONENTS), language="text")
         omitted = omitted_oxides_for_model(selected_model)
